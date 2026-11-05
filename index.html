@@ -1,0 +1,21 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta name="description" content="Turn house plans (DWG, DXF or images) into an editable 3D home you can walk through. Works offline." />
+    <meta name="theme-color" content="#e8467c" />
+    <link rel="icon" href="./icon.svg" type="image/svg+xml" />
+    <link rel="apple-touch-icon" href="./pwa-192.png" />
+    <title>Walkable House</title>
+  </head>
+  <body>
+    <div id="app"></div>
+    <div id="boot" class="boot" aria-live="polite">
+      <div class="spinner" aria-hidden="true"></div>
+      <p>Loading your house…</p>
+    </div>
+    <noscript>Walkable House needs JavaScript to run.</noscript>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>
