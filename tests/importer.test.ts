@@ -1,0 +1,171 @@
+import { readFileSync } from 'node:fs';
+import { describe, expect, it } from 'vitest';
+import { Dwg_File_Type, LibreDwg } from '@mlightcad/libredwg-web';
+import { cleanText, flattenDatabase, type RawDatabase } from '../src/importer/cadParse';
+import type { CadDrawing, CadSegment } from '../src/importer/cadTypes';
+import { buildProject, extract, guessScale, guessWallLayers, mergeCollinear, pairWalls } from '../src/importer/extract';
+import { parseDxf } from '../src/importer/dxf';
+import { roomRegions } from '../src/geometry/rooms';
+
+const seg = (x1: number, y1: number, x2: number, y2: number, layer = 'WALL'): CadSegment => ({ x1, y1, x2, y2, layer, b: 0 });
+
+function drawing(segments: CadSegment[], extra: Partial<CadDrawing> = {}): CadDrawing {
+  const layers = new Map<string, number>();
+  segments.forEach((s) => layers.set(s.layer, (layers.get(s.layer) ?? 0) + 1));
+  return {
+    fileName: 'test.dxf', segments, arcs: [], texts: [], inserts: [], insunits: 6, warnings: [],
+    layers: [...layers].map(([name, count]) => ({ name, count })), ...extra,
+  };
+}
+
+/** Double-line 5 × 4 m room with 0.2 m walls (outer face at 0, inner at 0.2). */
+function roomSegments(ox = 0, gap?: [number, number]): CadSegment[] {
+  const s: CadSegment[] = [];
+  const W = 5, D = 4, T = 0.2;
+  if (gap) {
+    s.push(seg(ox, 0, ox + gap[0], 0), seg(ox + gap[1], 0, ox + W, 0));
+    s.push(seg(ox + T, T, ox + gap[0], T), seg(ox + gap[1], T, ox + W - T, T));
+  } else {
+    s.push(seg(ox, 0, ox + W, 0), seg(ox + T, T, ox + W - T, T));
+  }
+  s.push(seg(ox, D, ox + W, D), seg(ox + T, D - T, ox + W - T, D - T));
+  s.push(seg(ox, 0, ox, D), seg(ox + T, T, ox + T, D - T));
+  s.push(seg(ox + W, 0, ox + W, D), seg(ox + W - T, T, ox + W - T, D - T));
+  return s;
+}
+
+describe('cleanText', () => {
+  it('strips MTEXT formatting', () => {
+    expect(cleanText('{\\fArial|b1;KITCHEN}\\PArea')).toBe('KITCHEN Area');
+  });
+});
+
+describe('flattenDatabase', () => {
+  it('resolves nested, scaled, rotated and mirrored blocks', () => {
+    const db: RawDatabase = {
+      header: { INSUNITS: 4 },
+      tables: { BLOCK_RECORD: { entries: [
+        { name: 'UNIT', basePoint: { x: 0, y: 0 }, entities: [{ type: 'LINE', layer: '0', startPoint: { x: 0, y: 0 }, endPoint: { x: 1, y: 0 } }] },
+        { name: 'OUTER', basePoint: { x: 0, y: 0 }, entities: [{ type: 'INSERT', layer: '0', name: 'UNIT', insertionPoint: { x: 0, y: 0 }, rotation: Math.PI / 2, xScale: 2, yScale: 2 }] },
+      ] } },
+      entities: [
+        { type: 'INSERT', layer: 'WALLS', name: 'OUTER', insertionPoint: { x: 10, y: 5 }, xScale: 1, yScale: 1 },
+        // Mirrored OCS: x is negated (extrusion 0,0,-1)
+        { type: 'INSERT', layer: 'M', name: 'UNIT', insertionPoint: { x: -3, y: 0 }, xScale: 1, yScale: 1, extrusionDirection: { x: 0, y: 0, z: -1 } },
+      ],
+    };
+    const d = flattenDatabase(db, 'x.dwg');
+    const nested = d.segments.find((s) => s.layer === 'WALLS')!;
+    // UNIT rotated 90° and scaled 2: (0,0)->(0,2), then translated by (10,5); layer 0 inherits WALLS
+    expect(nested.x1).toBeCloseTo(10); expect(nested.y1).toBeCloseTo(5);
+    expect(nested.x2).toBeCloseTo(10); expect(nested.y2).toBeCloseTo(7);
+    const mirrored = d.segments.find((s) => s.layer === 'M')!;
+    expect(mirrored.x1).toBeCloseTo(3);
+    expect(mirrored.x2).toBeCloseTo(2);
+    expect(d.inserts.map((i) => i.name)).toEqual(['OUTER', 'UNIT', 'UNIT']);
+    expect(d.insunits).toBe(4);
+  });
+});
+
+describe('wall extraction', () => {
+  it('pairs double lines into centreline walls with thickness', () => {
+    const lines = roomSegments().map((s) => {
+      const a = { x: s.x1, z: -s.y1 }, b = { x: s.x2, z: -s.y2 };
+      const len = Math.hypot(b.x - a.x, b.z - a.z);
+      let ang = Math.atan2((b.z - a.z) / len, (b.x - a.x) / len);
+      if (ang < 0) ang += Math.PI;
+      if (ang >= Math.PI - 1e-9) ang -= Math.PI;
+      return { a, b, len, ux: (b.x - a.x) / len, uz: (b.z - a.z) / len, ang, layer: 'WALL' };
+    });
+    const walls = pairWalls(lines, { minThickness: 0.07, maxThickness: 0.6 });
+    expect(walls).toHaveLength(4);
+    walls.forEach((w) => expect(w.thickness).toBeCloseTo(0.2));
+  });
+
+  it('bridges short collinear gaps as openings', () => {
+    const w = (x1: number, x2: number) => ({ id: `${x1}`, a: { x: x1, z: 0 }, b: { x: x2, z: 0 }, thickness: 0.2 });
+    const { walls, gaps } = mergeCollinear([w(0, 2), w(2.9, 5), w(9, 10)]);
+    expect(walls).toHaveLength(2);
+    expect(gaps).toHaveLength(1);
+    expect(gaps[0].width).toBeCloseTo(0.9);
+    expect(gaps[0].offset).toBeCloseTo(2.45);
+  });
+
+  it('detects separate floor plans, doors and rooms, and aligns floors', () => {
+    const segs = [...roomSegments(0, [1, 1.9]), ...roomSegments(20)];
+    const d = drawing(segs, {
+      arcs: [{ cx: 1, cy: 0.2, r: 0.9, layer: 'DOOR', sweep: Math.PI / 2 }],
+      texts: [{ text: 'LIVING', x: 2.5, y: 2, layer: 'T', height: 0.2 }, { text: 'BEDROOM', x: 22.5, y: 2, layer: 'T', height: 0.2 }],
+    });
+    const ex = extract(d, { scale: 1, wallLayers: ['WALL'], minThickness: 0.07, maxThickness: 0.6 });
+    expect(ex.floors).toHaveLength(2);
+    expect(ex.floors[0].openings.filter((o) => o.kind === 'door')).toHaveLength(1);
+    const p = buildProject(ex, { name: 'Test', assignment: [0, 1], floorHeight: 3, includeFurniture: true, keepUnderlay: false });
+    expect(p.levels.map((l) => l.elevation)).toEqual([0, 3]);
+    const [g, f] = p.levels;
+    // Floors are aligned on top of each other.
+    const minX = (l: typeof g) => Math.min(...l.walls.flatMap((w) => [w.a.x, w.b.x]));
+    expect(minX(f)).toBeCloseTo(minX(g), 1);
+    const reg = roomRegions(g).get(g.rooms[0].id)!;
+    expect(g.rooms[0].name).toBe('Living');
+    expect(reg.enclosed).toBe(true);
+    expect(reg.area).toBeCloseTo(4.6 * 3.6, 0);
+  });
+
+  it('guesses millimetre drawings and wall layers by name', () => {
+    const d = drawing(roomSegments().map((s) => ({ ...s, x1: s.x1 * 1000, y1: s.y1 * 1000, x2: s.x2 * 1000, y2: s.y2 * 1000, layer: 'A-WALL' })), { insunits: 0 });
+    const layers = guessWallLayers(d);
+    expect(layers).toEqual(['A-WALL']);
+    expect(guessScale(d, layers)).toBe(0.001);
+  });
+});
+
+describe('DXF end-to-end', () => {
+  it('reads a real DXF file into a walkable project', () => {
+    const text = readFileSync(new URL('./fixtures/simple-house.dxf', import.meta.url), 'utf8');
+    const d = flattenDatabase(parseDxf(text), 'simple-house.dxf');
+    expect(d.insunits).toBe(4);
+    const wallLayers = guessWallLayers(d);
+    expect(wallLayers).toContain('WALLS');
+    const scale = guessScale(d, wallLayers);
+    expect(scale).toBe(0.001);
+    const ex = extract(d, { scale, wallLayers, minThickness: 0.07, maxThickness: 0.6 });
+    expect(ex.floors).toHaveLength(1);
+    const p = buildProject(ex, { name: 'Simple', assignment: [0], floorHeight: 3, includeFurniture: true, keepUnderlay: true });
+    const level = p.levels[0];
+    expect(level.openings.some((o) => o.kind === 'door')).toBe(true);
+    expect(level.rooms.map((r) => r.name).sort()).toEqual(['Bedroom', 'Living']);
+    const regions = roomRegions(level);
+    for (const r of level.rooms) expect(regions.get(r.id)!.enclosed).toBe(true);
+    // The mirrored bed block (OCS extrusion -Z) lands inside the bedroom.
+    const bed = level.items.find((i) => i.type === 'bed')!;
+    expect(bed).toBeTruthy();
+    const wallMinX = Math.min(...level.walls.flatMap((w) => [w.a.x, w.b.x]));
+    expect(bed.x - wallMinX).toBeGreaterThan(3.6);
+    expect(bed.x - wallMinX).toBeLessThan(5.8);
+    expect(p.underlays[level.id]).toBeTruthy();
+  });
+
+  it('rejects malformed DXF with a readable error', () => {
+    expect(() => parseDxf('0\nSECTION\n2\nENTITIES\n0\nLINE\n10\nnot-a-number')).not.toThrow(TypeError);
+  });
+});
+
+// Optional: run against a real DWG with SAMPLE_DWG=/path/to/file.dwg npm test
+describe.skipIf(!process.env.SAMPLE_DWG)('DWG end-to-end (LibreDWG wasm)', () => {
+  it('imports the sample DWG', async () => {
+    const lib = await LibreDwg.create();
+    const buf = readFileSync(process.env.SAMPLE_DWG!);
+    const raw = lib.dwg_read_data(buf.buffer.slice(buf.byteOffset, buf.byteOffset + buf.byteLength), Dwg_File_Type.DWG);
+    expect(raw).toBeTruthy();
+    const d = flattenDatabase(lib.convert(raw!) as unknown as RawDatabase, 'sample.dwg');
+    lib.dwg_free(raw!);
+    let layers = guessWallLayers(d);
+    const scale = guessScale(d, layers);
+    layers = guessWallLayers(d, scale);
+    const ex = extract(d, { scale, wallLayers: layers, minThickness: 0.07, maxThickness: 0.6 });
+    expect(ex.floors.length).toBeGreaterThan(0);
+    const p = buildProject(ex, { name: 'Sample', assignment: ex.floors.map((_, i) => i), floorHeight: 3, includeFurniture: true, keepUnderlay: true });
+    expect(p.levels[0].walls.length).toBeGreaterThan(3);
+  });
+});

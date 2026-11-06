@@ -1,0 +1,97 @@
+import { expect, test, type Page } from '@playwright/test';
+import { fileURLToPath } from 'node:url';
+
+async function freshStart(page: Page) {
+  const errors: string[] = [];
+  page.on('pageerror', (e) => errors.push(e.message));
+  page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
+  await page.goto('/');
+  await page.evaluate(() => new Promise<void>((resolve) => {
+    const req = indexedDB.deleteDatabase('walkable-house');
+    req.onsuccess = req.onerror = req.onblocked = () => resolve();
+  }));
+  await page.reload();
+  return errors;
+}
+
+test.describe('Walkable House', () => {
+  test('first run offers a welcome and loads the demo house', async ({ page }) => {
+    const errors = await freshStart(page);
+    const dialog = page.getByRole('dialog', { name: 'Welcome to Walkable House' });
+    await expect(dialog).toBeVisible();
+    await dialog.getByRole('button', { name: 'Explore demo' }).click();
+    await expect(page.getByRole('tab', { name: 'Ground floor' })).toBeVisible();
+    await expect(page.getByRole('tab', { name: 'First floor' })).toBeVisible();
+    await expect(page.locator('.viewport-canvas')).toBeVisible();
+    await expect(page.locator('.save-status')).toHaveText('Saved', { timeout: 5000 });
+    expect(errors).toEqual([]);
+  });
+
+  test('edits are undoable and persist across reloads', async ({ page }) => {
+    await freshStart(page);
+    await page.getByRole('button', { name: 'Explore demo' }).click();
+    await page.getByRole('tab', { name: 'Library' }).click();
+    await page.getByRole('button', { name: /^Armchair/ }).click();
+    await expect(page.getByRole('tab', { name: 'Inspect' })).toBeVisible();
+    await page.getByRole('tab', { name: 'Inspect' }).click();
+    await expect(page.locator('.inspector-title')).toHaveText('Armchair');
+    // Rename via the inspector
+    const name = page.getByRole('textbox', { name: 'Name', exact: true });
+    await name.fill('Reading chair');
+    await name.press('Enter');
+    await expect(page.locator('.inspector-title')).toHaveText('Reading chair');
+    await expect(page.locator('.save-status')).toHaveText('Saved', { timeout: 5000 });
+    await page.reload();
+    await page.getByRole('tab', { name: 'Report' }).click();
+    await expect(page.getByText('Furniture', { exact: true })).toBeVisible();
+    // Undo removes the item again
+    await page.keyboard.press('Control+z');
+    await page.keyboard.press('Control+z');
+  });
+
+  test('walk mode can be entered and left', async ({ page }) => {
+    await freshStart(page);
+    await page.getByRole('button', { name: 'Explore demo' }).click();
+    await page.getByRole('radio', { name: 'Walk' }).click();
+    await expect(page.locator('.walk-hint')).toBeVisible();
+    await page.keyboard.down('KeyW');
+    await page.waitForTimeout(600);
+    await page.keyboard.up('KeyW');
+    await page.keyboard.press('Escape');
+    await expect(page.getByRole('radio', { name: 'Orbit' })).toHaveAttribute('aria-checked', 'true');
+  });
+
+  test('imports a DXF plan with walls, doors and rooms', async ({ page }) => {
+    await freshStart(page);
+    await page.getByRole('button', { name: 'Explore demo' }).click();
+    const chooser = page.waitForEvent('filechooser');
+    await page.getByRole('button', { name: /Import/ }).first().click();
+    await (await chooser).setFiles(fileURLToPath(new URL('../tests/fixtures/simple-house.dxf', import.meta.url)));
+    const dialog = page.getByRole('dialog', { name: /Import simple-house\.dxf/ });
+    await expect(dialog).toBeVisible({ timeout: 30_000 });
+    await expect(dialog.locator('.import-stats')).toContainText('1 floor');
+    await expect(dialog.locator('.import-stats')).toContainText('1 doors');
+    await dialog.getByRole('button', { name: 'Import', exact: true }).click();
+    await expect(page.locator('.project-name')).toHaveValue('simple-house');
+    await page.getByRole('tab', { name: 'Report' }).click();
+    await expect(page.getByRole('cell', { name: 'Living' })).toBeVisible();
+    await expect(page.getByRole('cell', { name: 'Bedroom' })).toBeVisible();
+    await expect(page.getByText(/No problems found|Checks/).first()).toBeVisible();
+  });
+
+  test('rejects unsupported files with a message', async ({ page }) => {
+    await freshStart(page);
+    await page.getByRole('button', { name: 'Explore demo' }).click();
+    const chooser = page.waitForEvent('filechooser');
+    await page.getByRole('button', { name: /Import/ }).first().click();
+    await (await chooser).setFiles({ name: 'notes.txt', mimeType: 'text/plain', buffer: Buffer.from('hello') });
+    await expect(page.locator('.toast-error')).toContainText('Unsupported file type');
+  });
+
+  test('help dialog lists shortcuts', async ({ page }) => {
+    await freshStart(page);
+    await page.getByRole('button', { name: 'Explore demo' }).click();
+    await page.keyboard.press('?');
+    await expect(page.getByRole('dialog', { name: 'Walkable House' })).toContainText('Keyboard shortcuts');
+  });
+});
