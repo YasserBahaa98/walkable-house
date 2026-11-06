@@ -1,7 +1,6 @@
 import type { Store } from '../model/store';
-import type { Item, Project, Tool, Vec2 } from '../model/types';
+import type { Vec2 } from '../model/types';
 import { emptyProject, sampleProject } from '../model/sample';
-import { parseProject } from '../model/validate';
 import { formatLength, parseLength } from '../model/units';
 import { uid } from '../model/ids';
 import { dist } from '../geometry/math';
@@ -9,28 +8,22 @@ import { scaleLevel } from '../geometry/transform';
 import { PlanView } from '../view2d/PlanView';
 import { View3D } from '../view3d/View3D';
 import { ModelLibrary } from '../view3d/models';
-import { download, h, icon, iconButton, pickFiles, slug } from './dom';
+import { download, h, icon, iconButton, slug } from './dom';
 import type { IconName } from './icons';
 import { busy, confirmDialog, dialog, promptDialog, toast } from './feedback';
 import { Panel } from './Panel';
+import { FileImporter } from './FileImporter';
+import { bindShortcuts } from './shortcuts';
+import { TOOLS } from './tools';
 
-const TOOLS: { id: Tool; label: string; icon: IconName; key: string; hint: string }[] = [
-  { id: 'select', label: 'Select & move', icon: 'select', key: 'V', hint: 'Click to select · drag to move · drag empty space to pan · double-click a room to walk there' },
-  { id: 'wall', label: 'Draw walls', icon: 'wall', key: 'W', hint: 'Click to start, click to add corners · double-click, Enter or right-click to finish · Esc cancels' },
-  { id: 'door', label: 'Place door', icon: 'door', key: 'D', hint: 'Click on a wall to place a door' },
-  { id: 'window', label: 'Place window', icon: 'window', key: 'N', hint: 'Click on a wall to place a window' },
-  { id: 'room', label: 'Detect room', icon: 'room', key: 'R', hint: 'Click inside an area enclosed by walls to create a room' },
-  { id: 'stair', label: 'Place stairs', icon: 'stairs', key: 'S', hint: 'Click to place stairs leading up to the next level' },
-  { id: 'measure', label: 'Measure', icon: 'ruler', key: 'M', hint: 'Drag to measure a distance · snaps to wall corners' },
-];
 
-const FILE_ACCEPT = '.dwg,.dxf,.json,.walkhouse,.png,.jpg,.jpeg,.webp,.glb,.gltf,.bin,.zip';
 
 export class App {
   private plan!: PlanView;
   private view3d: View3D | null = null;
   private panel!: Panel;
   private library = new ModelLibrary();
+  private files!: FileImporter;
   private root: HTMLElement;
   private els: Record<string, HTMLElement> = {};
   private levelsSig = '';
@@ -40,8 +33,16 @@ export class App {
   constructor(private store: Store, mount: HTMLElement) {
     this.root = mount;
     this.build();
-    this.bindShortcuts();
-    this.bindDrop();
+    bindShortcuts({
+      store, plan: this.plan, view3d: () => this.view3d,
+      help: () => this.help(), walk: () => this.walk(), exportProject: () => this.exportProject(), openFile: () => this.openFile(),
+    });
+    this.files = new FileImporter(store, this.library, {
+      viewCenter: () => this.plan.viewCenter(),
+      fit: () => this.plan.fit(),
+      frame: () => this.view3d?.frame(),
+    });
+    this.files.bindDrop();
     store.subscribe((k) => {
       if (k.has('project') || k.has('level') || k.has('tool') || k.has('view') || k.has('status')) this.refreshChrome();
     });
@@ -285,218 +286,11 @@ export class App {
     box.hidden = !box.childElementCount;
   }
 
-  // ------------------------------------------------------------- shortcuts
-  private bindShortcuts() {
-    const s = this.store;
-    window.addEventListener('keydown', (e) => {
-      const t = e.target as HTMLElement;
-      const typing = /INPUT|TEXTAREA|SELECT/.test(t.tagName) || t.isContentEditable;
-      const mod = e.ctrlKey || e.metaKey;
-      if (document.querySelector('dialog[open]')) return;
-      if (mod && e.key.toLowerCase() === 'z' && !typing) { e.preventDefault(); if (e.shiftKey) s.redo(); else s.undo(); return; }
-      if (mod && e.key.toLowerCase() === 'y' && !typing) { e.preventDefault(); s.redo(); return; }
-      if (mod && e.key.toLowerCase() === 's') { e.preventDefault(); this.exportProject(); return; }
-      if (mod && e.key.toLowerCase() === 'o') { e.preventDefault(); this.openFile(); return; }
-      if (mod && e.key.toLowerCase() === 'd' && !typing) { e.preventDefault(); s.duplicateSelection(); return; }
-      if (typing || mod || e.altKey) return;
-      const walking = s.view.mode === 'walk';
-      if (e.key === 'Escape') {
-        if (this.plan.cancel()) return;
-        if (s.tool !== 'select') { s.setTool('select'); return; }
-        if (s.selection) { s.select(null); return; }
-        if (walking) s.setView({ mode: 'orbit' });
-        return;
-      }
-      if (e.key === 'Enter' && s.tool === 'wall') { this.plan.finishDraft(); return; }
-      if (e.key === ' ' && !walking) { this.plan.setSpace(true); if (t === this.plan.canvas) e.preventDefault(); return; }
-      if (walking && ['w', 'a', 's', 'd'].includes(e.key.toLowerCase())) return;
-      if ((e.key === 'Delete' || e.key === 'Backspace') && s.selection) { e.preventDefault(); s.deleteSelection(); return; }
-      if (e.key === '?') { this.help(); return; }
-      if (e.key === '1') { s.setView({ mode: 'orbit' }); return; }
-      if (e.key === '2') { this.walk(); return; }
-      if (e.key === 'PageUp' || e.key === 'PageDown') {
-        e.preventDefault();
-        const next = e.key === 'PageUp' ? s.levelAbove() : s.levelBelow();
-        if (next) s.setLevel(next.id);
-        return;
-      }
-      const tool = TOOLS.find((x) => x.key.toLowerCase() === e.key.toLowerCase());
-      if (tool && !walking) { s.setTool(tool.id); return; }
-      if (e.key.toLowerCase() === 'f') { this.plan.fit(); this.view3d?.frame(); return; }
-      if (e.key.toLowerCase() === 'l') { s.setView({ night: !s.view.night }); return; }
-      if (e.key.toLowerCase() === 't') { s.setView({ showRoof: !s.view.showRoof }); return; }
-      if (e.key === '+' || e.key === '=') { this.plan.zoomBy(1.25); return; }
-      if (e.key === '-') { this.plan.zoomBy(0.8); return; }
-      const sel = s.selection;
-      if (sel && (sel.kind === 'item' || sel.kind === 'stair')) {
-        if (e.key.toLowerCase() === 'q' || e.key.toLowerCase() === 'e') {
-          const step = (e.shiftKey ? Math.PI / 2 : Math.PI / 12) * (e.key.toLowerCase() === 'q' ? 1 : -1);
-          s.mutate((_p, l) => {
-            const obj = (sel.kind === 'item' ? l.items : l.stairs).find((x) => x.id === sel.id);
-            if (obj) obj.rot = Math.round((obj.rot + step) * 1000) / 1000;
-          }, `rot-${sel.id}`);
-          return;
-        }
-        const arrows: Record<string, [number, number]> = { ArrowLeft: [-1, 0], ArrowRight: [1, 0], ArrowUp: [0, -1], ArrowDown: [0, 1] };
-        const a = arrows[e.key];
-        if (a && document.activeElement !== this.view3d?.renderer.domElement) {
-          e.preventDefault();
-          const d = e.shiftKey ? 0.5 : 0.05;
-          s.mutate((_p, l) => {
-            const obj = (sel.kind === 'item' ? l.items : l.stairs).find((x) => x.id === sel.id);
-            if (obj) { obj.x = Math.round((obj.x + a[0] * d) * 1000) / 1000; obj.z = Math.round((obj.z + a[1] * d) * 1000) / 1000; }
-          }, `nudge-${sel.id}`);
-        }
-      }
-    });
-    window.addEventListener('keyup', (e) => { if (e.key === ' ') this.plan.setSpace(false); });
-  }
-
-  // ---------------------------------------------------------------- files
-  private bindDrop() {
-    let depth = 0;
-    const overlay = h('div', { class: 'drop-overlay', hidden: true }, h('div', {}, icon('upload', 32), h('p', {}, 'Drop a DWG, DXF, image, project or 3D model')));
-    document.body.append(overlay);
-    window.addEventListener('dragenter', (e) => { if (e.dataTransfer?.types.includes('Files')) { depth++; overlay.hidden = false; } });
-    window.addEventListener('dragleave', () => { depth = Math.max(0, depth - 1); if (!depth) overlay.hidden = true; });
-    window.addEventListener('dragover', (e) => { if (e.dataTransfer?.types.includes('Files')) e.preventDefault(); });
-    window.addEventListener('drop', (e) => {
-      e.preventDefault();
-      depth = 0;
-      overlay.hidden = true;
-      const files = [...(e.dataTransfer?.files ?? [])];
-      if (files.length) void this.importFiles(files);
-    });
-  }
-
-  async openFile() {
-    const files = await pickFiles(FILE_ACCEPT);
-    if (files.length) await this.importFiles(files);
-  }
-
-  /** Several files at once are a multi-file 3D model (.gltf + .bin + textures). */
-  async importFiles(files: File[]) {
-    if (files.length === 1) return this.importFile(files[0]);
-    if (files.some((f) => /\.(gltf|glb|zip)$/i.test(f.name))) {
-      try { await this.importModel(files); } catch (err) { toast(err instanceof Error ? err.message : 'Import failed.', 'error'); }
-      return;
-    }
-    toast('Import one plan at a time. Multiple files are only supported for a .gltf model with its .bin and textures.', 'error');
-  }
-
-  /** Route a file to the right importer based on its extension. */
-  async importFile(file: File) {
-    const ext = file.name.split('.').pop()?.toLowerCase() ?? '';
-    try {
-      if (ext === 'dwg' || ext === 'dxf') await this.importCad(file);
-      else if (ext === 'json' || ext === 'walkhouse') await this.importProject(file);
-      else if (['png', 'jpg', 'jpeg', 'webp'].includes(ext)) await this.importImage(file);
-      else if (ext === 'glb' || ext === 'gltf' || ext === 'zip') await this.importModel([file]);
-      else toast(`Unsupported file type “.${ext}”. Use DWG, DXF, PNG/JPG, JSON, GLB/glTF or ZIP.`, 'error');
-    } catch (err) {
-      console.error(err);
-      toast(err instanceof Error ? err.message : 'Import failed.', 'error');
-    }
-  }
-
-  private async importCad(file: File) {
-    if (file.size > 80 * 1024 * 1024) throw new Error('This drawing is larger than 80 MB.');
-    const done = busy(`Reading ${file.name}…`);
-    let drawing;
-    try {
-      const { readCadFile } = await import('../importer/cadClient');
-      drawing = await readCadFile(file);
-    } finally {
-      done();
-    }
-    const { cadImportDialog } = await import('./importDialog');
-    const hasContent = this.store.project.levels.some((l) => l.walls.length);
-    const res = await cadImportDialog(drawing, hasContent);
-    if (!res) return;
-    if (res.mode === 'append') {
-      const top = this.store.sortedLevels().at(-1)!;
-      const base = top.elevation + top.height + 0.3;
-      this.store.mutate((p) => {
-        for (const l of res.project.levels) {
-          l.elevation = Math.round((l.elevation + base) * 1000) / 1000;
-          p.levels.push(l);
-          const ul = res.project.underlays[l.id];
-          if (ul) p.underlays[l.id] = ul;
-        }
-      });
-      this.store.setLevel(res.project.levels[0].id);
-    } else {
-      this.store.load(res.project, true);
-    }
-    this.afterLoad();
-    const rooms = res.project.levels.reduce((n, l) => n + l.rooms.length, 0);
-    toast(`Imported ${res.project.levels.length} level${res.project.levels.length === 1 ? '' : 's'} and ${rooms} rooms. Check the Report tab for anything to fix.`, 'success', 6000);
-  }
-
-  private async importProject(file: File) {
-    const text = await file.text();
-    let project: Project;
-    try {
-      project = parseProject(JSON.parse(text));
-    } catch (err) {
-      throw new Error(err instanceof SyntaxError ? 'This file is not valid JSON.' : (err as Error).message, { cause: err });
-    }
-    if (!(await confirmDialog('Open project', `Replace the current project with “${project.name}”? You can undo this.`, 'Open'))) return;
-    this.store.load(project, true);
-    this.afterLoad();
-    toast(`Opened “${project.name}”.`, 'success');
-  }
-
-  private async importImage(file: File) {
-    if (file.size > 25 * 1024 * 1024) throw new Error('Image is larger than 25 MB.');
-    const dataUrl = await new Promise<string>((resolve, reject) => {
-      const r = new FileReader();
-      r.onload = () => resolve(String(r.result));
-      r.onerror = () => reject(new Error('Could not read the image.'));
-      r.readAsDataURL(file);
-    });
-    const img = await new Promise<HTMLImageElement>((resolve, reject) => {
-      const i = new Image();
-      i.onload = () => resolve(i);
-      i.onerror = () => reject(new Error('This image could not be decoded.'));
-      i.src = dataUrl;
-    });
-    const widthStr = await promptDialog('Trace over an image', 'How wide is the drawing in reality?', '12 m',
-      'A rough estimate is fine — you can calibrate exactly afterwards by measuring a known wall.');
-    if (!widthStr) return;
-    const width = parseLength(widthStr, 'm') ?? 12;
-    const level = this.store.level;
-    const scale = width / img.naturalWidth;
-    const c = this.plan.viewCenter();
-    this.store.mutate((p) => {
-      p.underlays[level.id] = {
-        kind: 'image', dataUrl, width: img.naturalWidth, height: img.naturalHeight, scale,
-        x: Math.round((c.x - width / 2) * 100) / 100, z: Math.round((c.z - (img.naturalHeight * scale) / 2) * 100) / 100,
-      };
-    });
-    this.store.setView({ showUnderlay: true });
-    this.plan.fit();
-    this.store.setTool('wall');
-    toast('Image placed under the plan. Trace walls with the wall tool (W); use Calibrate in the Inspect tab for exact scale.', 'success', 7000);
-  }
-
-  private async importModel(files: File[]) {
-    const done = busy('Importing 3D model…');
-    let info;
-    try { info = await this.library.importFiles(files); } finally { done(); }
-    const c = this.plan.viewCenter();
-    const dim = (v: number) => Math.min(20, Math.max(0.05, Math.round(v * 1000) / 1000));
-    const it: Item = { id: uid('i'), type: 'model', name: info.name, x: c.x, z: c.z, rot: 0, w: dim(info.size.x), d: dim(info.size.z), h: dim(info.size.y), color: '#c4bdb3', modelId: info.id };
-    this.store.mutate((_p, l) => { l.items.push(it); });
-    this.store.select({ kind: 'item', id: it.id });
-    toast(`Added model “${info.name}”. It is saved in your library.`, 'success');
-  }
-
-  private afterLoad() {
-    requestAnimationFrame(() => { this.plan.fit(); this.view3d?.frame(); });
-  }
-
   // -------------------------------------------------------------- actions
+  openFile() { return this.files.openFile(); }
+
+  private afterLoad() { this.files.afterLoad(); }
+
   private walk(at?: { x: number; z: number }) {
     if (!this.view3d) { toast('The 3D view is not available on this device.', 'error'); return; }
     this.view3d.startWalk(at);

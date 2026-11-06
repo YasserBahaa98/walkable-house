@@ -128,18 +128,29 @@ The end-to-end tests need a Chromium for Playwright: `npx playwright install chr
 ```
 src/
   model/      domain types, store (undo/redo, layouts), validation, units, catalog, persistence
-  geometry/   walls & openings, room detection (grid flood fill), stairs, design checks — pure, unit-tested
-  importer/   CAD worker (LibreDWG / dxf-parser), block flattening, plan extraction heuristics
-  view2d/     canvas plan editor
-  view3d/     Three.js scene, procedural materials, parametric furniture, walk physics, glTF models
-  ui/         application shell, panels, dialogs, import dialog
-tests/        Vitest suites and a DXF fixture
+  geometry/   walls & openings, rooms (grid flood fill), stairs, roofs, checks, transforms — pure, unit-tested
+  importer/   CAD worker (LibreDWG / dxf-parser) and block flattening, then extraction steps:
+              units, walls (pairing, openings, joints, gaps), stairs, furniture, build (alignment, project)
+  view2d/     canvas plan editor and colour helpers
+  view3d/     Three.js scene, level/roof/furniture builders, mesh merging, walk physics, glTF models
+  ui/         application shell, file importer, shortcuts, panel and form fields, dialogs
+tests/        Vitest suites and CAD/glTF fixtures
 e2e/          Playwright specs (desktop and phone)
 ```
 
 The store is the single source of truth: the plan, the 3D view and the panels subscribe to it and every edit
 goes through `store.mutate()`, which records undo history and schedules autosave. Room shapes are never stored —
 they are derived from the walls, so editing walls updates room floors and areas automatically.
+
+### Performance notes
+
+- Each level's static geometry and each piece of furniture is merged into one mesh per material, so a house
+  renders in a few dozen draw calls. Picking maps hit triangles back to walls, openings, rooms and stairs.
+- Furniture is rebuilt individually; moving an item only updates its transform.
+- The 3D view renders on demand (only when something changed), and the plan redraws at most once per frame
+  with cached paths for reference drawings and room floors.
+- The CAD reader runs in a Web Worker and its 11 MB WebAssembly module loads only when a DWG is imported.
+  three.js sits in its own chunk so app updates don't re-download it.
 
 ## Known limitations
 

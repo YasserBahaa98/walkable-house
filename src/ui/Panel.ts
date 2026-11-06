@@ -2,16 +2,17 @@ import type { Store } from '../model/store';
 import type { FloorMaterial, FurnitureType, Item, Level, Opening, Room, Stair, Units, Wall } from '../model/types';
 import { CATALOG } from '../model/catalog';
 import { uid } from '../model/ids';
-import { formatArea, formatLength, parseLength, toUnit, unitLabel } from '../model/units';
+import { formatArea, formatLength, parseLength } from '../model/units';
 import { checkLevel, type Issue } from '../geometry/checks';
 import { roomRegions } from '../geometry/rooms';
 import { stairRise, stepCount } from '../geometry/stairs';
 import { curveWall, splitWall, wallLength } from '../geometry/walls';
-import { clamp, normAngle, round3 as round } from '../geometry/math';
+import { normAngle, round3 as round } from '../geometry/math';
 import { floorSwatch } from '../view3d/materials';
 import type { ModelLibrary } from '../view3d/models';
 import { download, h, icon, iconButton, pickFiles, slug } from './dom';
 import { confirmDialog, promptDialog, toast } from './feedback';
+import { cap, FieldKit, header, section, segmented, stat } from './fields';
 
 type Tab = 'inspect' | 'library' | 'report' | 'view';
 
@@ -31,13 +32,15 @@ export class Panel {
   private body: HTMLElement;
   private tabs: Record<Tab, HTMLButtonElement>;
   private tab: Tab = 'inspect';
-  private refreshers: (() => void)[] = [];
   private renderKey = '';
   private scheduled = false;
   private swatches = new Map<FloorMaterial, string>();
   private models: { id: string; name: string; size?: { x: number; y: number; z: number } }[] = [];
 
+  private f: FieldKit;
+
   constructor(private store: Store, private library: ModelLibrary, private host: PanelHost) {
+    this.f = new FieldKit(() => store.view.units);
     const mk = (id: Tab, label: string) => h('button', {
       class: 'tab', role: 'tab', id: `tab-${id}`, 'aria-controls': 'panel-body', type: 'button',
       onclick: () => this.setTab(id),
@@ -80,11 +83,11 @@ export class Panel {
     const active = document.activeElement;
     const typing = active instanceof HTMLElement && this.body.contains(active) && /INPUT|TEXTAREA|SELECT/.test(active.tagName);
     if (key === this.renderKey || (typing && this.renderKey.split('|').slice(0, 4).join('|') === key.split('|').slice(0, 4).join('|'))) {
-      this.refreshers.forEach((r) => r());
+      this.f.refresh();
       return;
     }
     this.renderKey = key;
-    this.refreshers = [];
+    this.f.reset();
     const scroll = this.body.scrollTop;
     this.body.replaceChildren(...this.content());
     this.body.scrollTop = scroll;
@@ -123,9 +126,9 @@ export class Panel {
     return [
       h('p', { class: 'hint' }, icon('info', 14), ' Select a wall, door, room, stair or piece of furniture in the plan or 3D view to edit it.'),
       section('Level', [
-        this.textField('Name', () => level.name, (v) => s.mutate((_p, l) => { l.name = v || l.name; }, 'level-name')),
-        this.lengthField('Floor elevation', () => level.elevation, (v) => s.mutate((_p, l) => { l.elevation = v; }, 'level-elev'), -50, 500),
-        this.lengthField('Ceiling height', () => level.height, (v) => s.mutate((_p, l) => { l.height = v; }, 'level-height'), 1.8, 20),
+        this.f.text('Name', () => level.name, (v) => s.mutate((_p, l) => { l.name = v || l.name; }, 'level-name')),
+        this.f.length('Floor elevation', () => level.elevation, (v) => s.mutate((_p, l) => { l.elevation = v; }, 'level-elev'), -50, 500),
+        this.f.length('Ceiling height', () => level.height, (v) => s.mutate((_p, l) => { l.height = v; }, 'level-height'), 1.8, 20),
         h('div', { class: 'stat-row' },
           stat('Rooms', String(level.rooms.length)), stat('Floor area', formatArea(area, s.view.units)), stat('Items', String(level.items.length))),
         h('div', { class: 'btn-row' },
@@ -137,8 +140,8 @@ export class Panel {
       this.roofSection(level),
       section('Reference drawing', ul ? [
         h('p', { class: 'muted small' }, ul.kind === 'cad' ? `CAD linework (${(ul.segments.length / 4).toLocaleString()} lines)` : 'Image underlay'),
-        this.toggle('Show on plan', () => s.view.showUnderlay, (v) => s.setView({ showUnderlay: v })),
-        this.slider('Opacity', 0.05, 1, 0.05, () => s.view.underlayOpacity, (v) => s.setView({ underlayOpacity: v }), (v) => `${Math.round(v * 100)}%`),
+        this.f.toggle('Show on plan', () => s.view.showUnderlay, (v) => s.setView({ showUnderlay: v })),
+        this.f.slider('Opacity', 0.05, 1, 0.05, () => s.view.underlayOpacity, (v) => s.setView({ underlayOpacity: v }), (v) => `${Math.round(v * 100)}%`),
         h('div', { class: 'btn-row' },
           h('button', { class: 'btn', type: 'button', onclick: () => this.host.startCalibrate() }, icon('target', 16), 'Calibrate scale'),
           h('button', { class: 'btn btn-danger-ghost', type: 'button', onclick: () => s.mutate((p) => { delete p.underlays[level.id]; }) }, icon('trash', 16), 'Remove')),
@@ -158,12 +161,12 @@ export class Panel {
     const nodes: Node[] = [type];
     if (roof) {
       if (roof.type !== 'flat') {
-        nodes.push(this.slider('Pitch', 5, 60, 1, () => level.roof?.pitch ?? 30, (v) => edit((r) => { r.pitch = v; }, `roof-p-${level.id}`), (v) => `${Math.round(v)}°`));
+        nodes.push(this.f.slider('Pitch', 5, 60, 1, () => level.roof?.pitch ?? 30, (v) => edit((r) => { r.pitch = v; }, `roof-p-${level.id}`), (v) => `${Math.round(v)}°`));
         nodes.push(h('div', { class: 'field' }, h('span', { class: 'field-label' }, 'Ridge'),
           segmented([{ id: 'auto', label: 'Long side' }, { id: 'x', label: 'Along X' }, { id: 'z', label: 'Along Y' }], roof.ridge,
             (v) => edit((r) => { r.ridge = v as 'auto' | 'x' | 'z'; }, uid()))));
       }
-      nodes.push(this.lengthField('Overhang', () => level.roof?.overhang ?? 0.4, (v) => edit((r) => { r.overhang = v; }, `roof-o-${level.id}`), 0, 2));
+      nodes.push(this.f.length('Overhang', () => level.roof?.overhang ?? 0.4, (v) => edit((r) => { r.overhang = v; }, `roof-o-${level.id}`), 0, 2));
       nodes.push(h('div', { class: 'field' }, h('span', { class: 'field-label' }, 'Covering'),
         segmented([{ id: 'clay', label: 'Clay tiles' }, { id: 'slate', label: 'Slate' }, { id: 'metal', label: 'Metal' }], roof.material,
           (v) => edit((r) => { r.material = v as 'clay' | 'slate' | 'metal'; }, uid()))));
@@ -180,14 +183,14 @@ export class Panel {
     return [
       header('Wall', 'wall', () => s.deleteSelection()),
       section('Dimensions', [
-        this.lengthField('Length', () => wallLength(this.cur<Wall>() ?? w), (v) => edit((x) => {
+        this.f.length('Length', () => wallLength(this.cur<Wall>() ?? w), (v) => edit((x) => {
           const L = wallLength(x) || 1;
           x.b = { x: round(x.a.x + ((x.b.x - x.a.x) / L) * v), z: round(x.a.z + ((x.b.z - x.a.z) / L) * v) };
         }, `wall-len-${w.id}`), 0.1, 200),
-        this.lengthField('Thickness', () => (this.cur<Wall>() ?? w).thickness, (v) => edit((x) => { x.thickness = v; }, `wall-t-${w.id}`), 0.03, 1.5),
-        this.lengthField('Height', () => (this.cur<Wall>() ?? w).height ?? level.height, (v) => edit((x) => { x.height = Math.abs(v - level.height) < 1e-6 ? undefined : v; }, `wall-h-${w.id}`), 0.2, 20,
+        this.f.length('Thickness', () => (this.cur<Wall>() ?? w).thickness, (v) => edit((x) => { x.thickness = v; }, `wall-t-${w.id}`), 0.03, 1.5),
+        this.f.length('Height', () => (this.cur<Wall>() ?? w).height ?? level.height, (v) => edit((x) => { x.height = Math.abs(v - level.height) < 1e-6 ? undefined : v; }, `wall-h-${w.id}`), 0.2, 20,
           'Leave equal to the level height to follow it.'),
-        this.colorField('Paint', () => (this.cur<Wall>() ?? w).color ?? '#f2eee8', (v) => edit((x) => { x.color = v; }, `wall-c-${w.id}`)),
+        this.f.color('Paint', () => (this.cur<Wall>() ?? w).color ?? '#f2eee8', (v) => edit((x) => { x.color = v; }, `wall-c-${w.id}`)),
       ]),
       section('Actions', [
         h('div', { class: 'btn-row' },
@@ -218,10 +221,10 @@ export class Panel {
       header(o.kind === 'door' ? 'Door' : o.kind === 'window' ? 'Window' : 'Passage', o.kind === 'window' ? 'window' : 'door', () => s.deleteSelection()),
       section('Type', [kindSeg]),
       section('Dimensions', [
-        this.lengthField('Width', () => cur().width, (v) => edit((x) => { x.width = v; }, `op-w-${o.id}`), 0.2, wall ? wallLength(wall) : 20),
-        this.lengthField('Height', () => cur().height, (v) => edit((x) => { x.height = v; }, `op-h-${o.id}`), 0.2, 10),
-        o.kind === 'window' ? this.lengthField('Sill height', () => cur().sill, (v) => edit((x) => { x.sill = v; }, `op-s-${o.id}`), 0, 5) : null,
-        this.lengthField('Position along wall', () => cur().offset, (v) => edit((x) => { x.offset = v; }, `op-o-${o.id}`), 0, wall ? wallLength(wall) : 100,
+        this.f.length('Width', () => cur().width, (v) => edit((x) => { x.width = v; }, `op-w-${o.id}`), 0.2, wall ? wallLength(wall) : 20),
+        this.f.length('Height', () => cur().height, (v) => edit((x) => { x.height = v; }, `op-h-${o.id}`), 0.2, 10),
+        o.kind === 'window' ? this.f.length('Sill height', () => cur().sill, (v) => edit((x) => { x.sill = v; }, `op-s-${o.id}`), 0, 5) : null,
+        this.f.length('Position along wall', () => cur().offset, (v) => edit((x) => { x.offset = v; }, `op-o-${o.id}`), 0, wall ? wallLength(wall) : 100,
           'Distance from the wall start to the centre. You can also drag it in the plan.'),
       ].filter(Boolean) as Node[]),
     ];
@@ -247,9 +250,9 @@ export class Panel {
       grid.append(b);
     }
     return [
-      this.liveHeader(() => (this.cur<Room>() ?? r).name, 'room', () => s.deleteSelection()),
+      this.f.liveHeader(() => (this.cur<Room>() ?? r).name, 'room', () => s.deleteSelection()),
       section('Details', [
-        this.textField('Name', () => (this.cur<Room>() ?? r).name, (v) => edit((x) => { x.name = v || x.name; }, `room-n-${r.id}`)),
+        this.f.text('Name', () => (this.cur<Room>() ?? r).name, (v) => edit((x) => { x.name = v || x.name; }, `room-n-${r.id}`)),
         h('div', { class: 'stat-row' },
           stat('Area', reg?.enclosed ? formatArea(reg.area, s.view.units) : '—'),
           stat('Status', reg?.enclosed ? 'Enclosed' : 'Open')),
@@ -269,24 +272,24 @@ export class Panel {
       ...types.map((t) => h('option', { value: t, selected: t === it.type }, cap(t))));
     typeSel.addEventListener('change', () => edit((x) => { x.type = typeSel.value as FurnitureType; }, uid()));
     return [
-      this.liveHeader(() => cur().name, 'sofa', () => s.deleteSelection()),
+      this.f.liveHeader(() => cur().name, 'sofa', () => s.deleteSelection()),
       section('Details', [
-        this.textField('Name', () => cur().name, (v) => edit((x) => { x.name = v || x.name; }, `it-n-${it.id}`)),
+        this.f.text('Name', () => cur().name, (v) => edit((x) => { x.name = v || x.name; }, `it-n-${it.id}`)),
         h('label', { class: 'field' }, h('span', { class: 'field-label' }, 'Type'), typeSel),
-        this.colorField('Colour', () => cur().color, (v) => edit((x) => { x.color = v; }, `it-c-${it.id}`)),
+        this.f.color('Colour', () => cur().color, (v) => edit((x) => { x.color = v; }, `it-c-${it.id}`)),
       ]),
       section('Size', [
         h('div', { class: 'grid-3' },
-          this.lengthField('Width', () => cur().w, (v) => edit((x) => { x.w = v; }, `it-w-${it.id}`), 0.02, 30),
-          this.lengthField('Depth', () => cur().d, (v) => edit((x) => { x.d = v; }, `it-d-${it.id}`), 0.02, 30),
-          this.lengthField('Height', () => cur().h, (v) => edit((x) => { x.h = v; }, `it-h-${it.id}`), 0.005, 10)),
-        this.lengthField('Raised by', () => cur().elevation ?? 0, (v) => edit((x) => { x.elevation = v || undefined; }, `it-e-${it.id}`), 0, 10, 'For wall-mounted items such as TVs and shelves.'),
+          this.f.length('Width', () => cur().w, (v) => edit((x) => { x.w = v; }, `it-w-${it.id}`), 0.02, 30),
+          this.f.length('Depth', () => cur().d, (v) => edit((x) => { x.d = v; }, `it-d-${it.id}`), 0.02, 30),
+          this.f.length('Height', () => cur().h, (v) => edit((x) => { x.h = v; }, `it-h-${it.id}`), 0.005, 10)),
+        this.f.length('Raised by', () => cur().elevation ?? 0, (v) => edit((x) => { x.elevation = v || undefined; }, `it-e-${it.id}`), 0, 10, 'For wall-mounted items such as TVs and shelves.'),
       ]),
       section('Placement', [
         h('div', { class: 'grid-2' },
-          this.lengthField('X', () => cur().x, (v) => edit((x) => { x.x = v; }, `it-x-${it.id}`), -1000, 1000),
-          this.lengthField('Y', () => cur().z, (v) => edit((x) => { x.z = v; }, `it-z-${it.id}`), -1000, 1000)),
-        this.numberField('Rotation', '°', () => Math.round(((cur().rot * 180) / Math.PI) * 10) / 10, (v) => edit((x) => { x.rot = (v * Math.PI) / 180; }, `it-r-${it.id}`), -360, 360, 15),
+          this.f.length('X', () => cur().x, (v) => edit((x) => { x.x = v; }, `it-x-${it.id}`), -1000, 1000),
+          this.f.length('Y', () => cur().z, (v) => edit((x) => { x.z = v; }, `it-z-${it.id}`), -1000, 1000)),
+        this.f.number('Rotation', '°', () => Math.round(((cur().rot * 180) / Math.PI) * 10) / 10, (v) => edit((x) => { x.rot = (v * Math.PI) / 180; }, `it-r-${it.id}`), -360, 360, 15),
         h('div', { class: 'btn-row' },
           h('button', { class: 'btn', type: 'button', onclick: () => edit((x) => { x.rot = normAngle(x.rot + Math.PI / 2); }, uid()) }, icon('rotate', 16), 'Rotate 90°'),
           h('button', { class: 'btn', type: 'button', onclick: () => s.duplicateSelection() }, icon('copy', 16), 'Duplicate')),
@@ -321,10 +324,10 @@ export class Panel {
       ].filter(Boolean) as Node[]),
       section('Dimensions', [
         h('div', { class: 'grid-2' },
-          this.lengthField('Width', () => cur().width, (v) => edit((x) => { x.width = v; }, `st-w-${st.id}`), 0.5, 5),
-          this.lengthField(st.shape ? 'First flight' : 'Run length', () => cur().length, (v) => edit((x) => { x.length = v; }, `st-l-${st.id}`), 0.5, 15)),
-        st.shape ? this.lengthField('Second flight', () => cur().length2 ?? cur().length, (v) => edit((x) => { x.length2 = v; }, `st-l2-${st.id}`), 0.5, 15) : null,
-        this.numberField('Rotation', '°', () => Math.round(((cur().rot * 180) / Math.PI) * 10) / 10, (v) => edit((x) => { x.rot = (v * Math.PI) / 180; }, `st-r-${st.id}`), -360, 360, 15),
+          this.f.length('Width', () => cur().width, (v) => edit((x) => { x.width = v; }, `st-w-${st.id}`), 0.5, 5),
+          this.f.length(st.shape ? 'First flight' : 'Run length', () => cur().length, (v) => edit((x) => { x.length = v; }, `st-l-${st.id}`), 0.5, 15)),
+        st.shape ? this.f.length('Second flight', () => cur().length2 ?? cur().length, (v) => edit((x) => { x.length2 = v; }, `st-l2-${st.id}`), 0.5, 15) : null,
+        this.f.number('Rotation', '°', () => Math.round(((cur().rot * 180) / Math.PI) * 10) / 10, (v) => edit((x) => { x.rot = (v * Math.PI) / 180; }, `st-r-${st.id}`), -360, 360, 15),
         h('div', { class: 'stat-row' },
           stat('Rise', formatLength(rise, s.view.units)), stat('Steps', String(n)),
           stat('Riser', formatLength(rise / n, s.view.units, true)),
@@ -414,21 +417,21 @@ export class Panel {
     return [
       section('Lighting', [
         segmented([{ id: 'day', label: 'Day' }, { id: 'night', label: 'Evening' }], v.night ? 'night' : 'day', (id) => s.setView({ night: id === 'night' })),
-        this.slider('Sun direction', 0, 360, 5, () => v.sun, (x) => s.setView({ sun: x }), (x) => `${Math.round(x)}°`),
+        this.f.slider('Sun direction', 0, 360, 5, () => v.sun, (x) => s.setView({ sun: x }), (x) => `${Math.round(x)}°`),
       ]),
       section('3D view', [
-        this.slider('Doors open', 0, 1, 0.05, () => v.doorsOpen, (x) => s.setView({ doorsOpen: x }), (x) => `${Math.round(x * 100)}%`),
-        this.toggle('Cutaway walls (orbit view)', () => v.cutaway, (x) => s.setView({ cutaway: x })),
-        this.toggle('Show roof of the active level', () => v.showRoof, (x) => s.setView({ showRoof: x })),
-        this.slider('Eye height (walk)', 0.9, 2.0, 0.01, () => v.eye, (x) => s.setView({ eye: x }), (x) => formatLength(x, v.units)),
+        this.f.slider('Doors open', 0, 1, 0.05, () => v.doorsOpen, (x) => s.setView({ doorsOpen: x }), (x) => `${Math.round(x * 100)}%`),
+        this.f.toggle('Cutaway walls (orbit view)', () => v.cutaway, (x) => s.setView({ cutaway: x })),
+        this.f.toggle('Show roof of the active level', () => v.showRoof, (x) => s.setView({ showRoof: x })),
+        this.f.slider('Eye height (walk)', 0.9, 2.0, 0.01, () => v.eye, (x) => s.setView({ eye: x }), (x) => formatLength(x, v.units)),
         h('div', { class: 'field' }, h('span', { class: 'field-label' }, 'Quality'),
           segmented([{ id: 'high', label: 'High' }, { id: 'low', label: 'Fast' }], v.quality, (id) => s.setView({ quality: id as 'high' | 'low' }))),
       ]),
       section('Plan', [
-        this.toggle('Grid', () => v.showGrid, (x) => s.setView({ showGrid: x })),
-        this.toggle('Snapping', () => v.snap, (x) => s.setView({ snap: x })),
-        this.toggle('Show level below', () => v.ghostLevel, (x) => s.setView({ ghostLevel: x })),
-        this.toggle('Reference drawing', () => v.showUnderlay, (x) => s.setView({ showUnderlay: x })),
+        this.f.toggle('Grid', () => v.showGrid, (x) => s.setView({ showGrid: x })),
+        this.f.toggle('Snapping', () => v.snap, (x) => s.setView({ snap: x })),
+        this.f.toggle('Show level below', () => v.ghostLevel, (x) => s.setView({ ghostLevel: x })),
+        this.f.toggle('Reference drawing', () => v.showUnderlay, (x) => s.setView({ showUnderlay: x })),
         h('div', { class: 'field' }, h('span', { class: 'field-label' }, 'Units'),
           segmented([{ id: 'm', label: 'Metres' }, { id: 'cm', label: 'Centimetres' }, { id: 'ft', label: 'Feet' }], v.units, (id) => s.setView({ units: id as Units }))),
       ]),
@@ -571,119 +574,4 @@ export class Panel {
     if (!src) { src = floorSwatch(f); this.swatches.set(f, src); }
     return src;
   }
-
-  // -------------------------------------------------------------- fields
-  /** Inspector header whose title follows the edited object's name. */
-  private liveHeader(title: () => string, ic: Parameters<typeof icon>[0], onDelete: () => void): HTMLElement {
-    const el = header(title(), ic, onDelete);
-    const t = el.querySelector('.inspector-title')!;
-    this.refreshers.push(() => { t.textContent = title(); });
-    return el;
-  }
-
-  private lengthField(label: string, get: () => number, set: (v: number) => void, min: number, max: number, hint?: string): HTMLElement {
-    const units = this.store.view.units;
-    const input = h('input', { class: 'input', inputmode: 'decimal', 'aria-label': `${label} (${unitLabel(units)})`, spellcheck: 'false' });
-    const show = () => { if (document.activeElement !== input) input.value = String(toUnit(get(), units)); };
-    const commit = () => {
-      const v = parseLength(input.value, units);
-      if (v === null || !Number.isFinite(v)) { input.classList.add('invalid'); return; }
-      input.classList.remove('invalid');
-      set(clamp(v, min, max));
-      input.value = String(toUnit(clamp(v, min, max), units));
-    };
-    input.addEventListener('change', commit);
-    input.addEventListener('keydown', (e) => {
-      if (e.key === 'Enter') { commit(); input.select(); }
-      if (e.key === 'ArrowUp' || e.key === 'ArrowDown') {
-        e.preventDefault();
-        const stepM = e.shiftKey ? 0.1 : units === 'ft' ? 0.0254 : 0.01;
-        const v = clamp(get() + (e.key === 'ArrowUp' ? stepM : -stepM), min, max);
-        set(round(v));
-        input.value = String(toUnit(v, units));
-      }
-    });
-    input.addEventListener('blur', () => { input.classList.remove('invalid'); show(); });
-    show();
-    this.refreshers.push(show);
-    return h('label', { class: 'field' }, h('span', { class: 'field-label' }, label),
-      h('span', { class: 'input-unit' }, input, h('span', { class: 'unit' }, unitLabel(units))),
-      hint ? h('span', { class: 'field-hint' }, hint) : null);
-  }
-
-  private numberField(label: string, unit: string, get: () => number, set: (v: number) => void, min: number, max: number, step: number): HTMLElement {
-    const input = h('input', { class: 'input', type: 'number', step: String(step), min: String(min), max: String(max), 'aria-label': label });
-    const show = () => { if (document.activeElement !== input) input.value = String(get()); };
-    input.addEventListener('input', () => { const v = parseFloat(input.value); if (Number.isFinite(v)) set(clamp(v, min, max)); });
-    show();
-    this.refreshers.push(show);
-    return h('label', { class: 'field' }, h('span', { class: 'field-label' }, label), h('span', { class: 'input-unit' }, input, h('span', { class: 'unit' }, unit)));
-  }
-
-  private textField(label: string, get: () => string, set: (v: string) => void): HTMLElement {
-    const input = h('input', { class: 'input', 'aria-label': label, maxlength: 80 });
-    const show = () => { if (document.activeElement !== input) input.value = get(); };
-    input.addEventListener('input', () => set(input.value.trim()));
-    input.addEventListener('keydown', (e) => { if (e.key === 'Enter') input.blur(); });
-    show();
-    this.refreshers.push(show);
-    return h('label', { class: 'field' }, h('span', { class: 'field-label' }, label), input);
-  }
-
-  private colorField(label: string, get: () => string, set: (v: string) => void): HTMLElement {
-    const input = h('input', { class: 'color', type: 'color', 'aria-label': label });
-    const show = () => { if (document.activeElement !== input) input.value = get(); };
-    input.addEventListener('input', () => set(input.value));
-    show();
-    this.refreshers.push(show);
-    return h('label', { class: 'field field-inline' }, h('span', { class: 'field-label' }, label), input);
-  }
-
-  private toggle(label: string, get: () => boolean, set: (v: boolean) => void): HTMLElement {
-    const input = h('input', { type: 'checkbox', role: 'switch', class: 'switch' });
-    const show = () => { input.checked = get(); };
-    input.addEventListener('change', () => set(input.checked));
-    show();
-    this.refreshers.push(show);
-    return h('label', { class: 'toggle' }, h('span', {}, label), input);
-  }
-
-  private slider(label: string, min: number, max: number, step: number, get: () => number, set: (v: number) => void, fmt: (v: number) => string): HTMLElement {
-    const input = h('input', { type: 'range', min: String(min), max: String(max), step: String(step), 'aria-label': label, class: 'range' });
-    const out = h('output', { class: 'range-value' });
-    const show = () => { if (document.activeElement !== input) input.value = String(get()); out.textContent = fmt(get()); };
-    input.addEventListener('input', () => { set(parseFloat(input.value)); out.textContent = fmt(parseFloat(input.value)); });
-    show();
-    this.refreshers.push(show);
-    return h('label', { class: 'field' }, h('span', { class: 'field-label field-label-row' }, label, out), input);
-  }
 }
-
-// ---------------------------------------------------------------- helpers
-function section(title: string, children: Node[]): HTMLElement {
-  return h('section', { class: 'section' }, h('h3', { class: 'section-title' }, title), ...children);
-}
-
-function header(title: string, ic: Parameters<typeof icon>[0], onDelete: () => void): HTMLElement {
-  return h('div', { class: 'inspector-head' },
-    h('span', { class: 'inspector-icon' }, icon(ic, 18)),
-    h('h2', { class: 'inspector-title' }, title),
-    iconButton('trash', 'Delete', onDelete, 'Del', { class: 'icon-btn danger' }));
-}
-
-function stat(label: string, value: string): HTMLElement {
-  return h('div', { class: 'stat' }, h('span', { class: 'stat-value' }, value), h('span', { class: 'stat-label' }, label));
-}
-
-function segmented(options: { id: string; label: string }[], value: string, onChange: (id: string) => void): HTMLElement {
-  const group = h('div', { class: 'segmented', role: 'radiogroup' });
-  for (const o of options) {
-    group.append(h('button', {
-      type: 'button', role: 'radio', 'aria-checked': String(o.id === value), class: o.id === value ? 'on' : '',
-      onclick: () => onChange(o.id),
-    }, o.label));
-  }
-  return group;
-}
-
-const cap = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
