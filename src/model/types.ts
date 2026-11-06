@@ -70,8 +70,14 @@ export interface Stair {
   z: number;
   rot: number;
   width: number;
-  /** Horizontal run. The stair climbs along local +Z (from -length/2 to +length/2). */
+  /** Horizontal run of the first flight. The stair starts climbing along local +Z. */
   length: number;
+  /** Straight flight, or two flights joined by a landing (L: quarter turn, U: half turn). */
+  shape?: 'straight' | 'L' | 'U';
+  /** Direction of the turn for L/U stairs, as seen by someone walking up. */
+  turn?: 'left' | 'right';
+  /** Run of the second flight (L/U). Defaults to `length`. */
+  length2?: number;
 }
 
 export interface Level {

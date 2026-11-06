@@ -2,7 +2,7 @@ import * as THREE from 'three';
 import type { Item, Level, Opening, Stair, Wall } from '../model/types';
 import { type Obb, pointInObb } from '../geometry/math';
 import { roomRegions, type Rect } from '../geometry/rooms';
-import { stairObb, stepCount } from '../geometry/stairs';
+import { stairSections } from '../geometry/stairs';
 import { endExtensions, openingSpans, wallPieces } from '../geometry/walls';
 import { buildFurniture } from './furniture';
 import { floorMaterial, glassMaterial, solid, wallMaterial, worldUV } from './materials';
@@ -194,36 +194,47 @@ function buildWindow(g: THREE.Group, from: number, to: number, sill: number, top
 
 function buildStair(s: Stair, rise: number): THREE.Group {
   const g = new THREE.Group();
-  g.position.set(s.x, 0, s.z);
-  g.rotation.y = s.rot;
-  const n = stepCount(rise);
-  const tread = s.length / n, riser = rise / n;
   const mat = solid('#b38d66', 0.6);
   const side = solid('#efebe5', 0.85);
-  for (let k = 0; k < n; k++) {
-    const y = (k + 1) * riser;
-    const step = new THREE.Mesh(new THREE.BoxGeometry(s.width, 0.04, tread + 0.02), mat);
-    step.position.set(0, y - 0.02, -s.length / 2 + tread * (k + 0.5));
-    step.castShadow = step.receiveShadow = true;
-    g.add(step);
-    const body = new THREE.Mesh(new THREE.BoxGeometry(s.width, y - 0.04, tread), side);
-    body.position.set(0, (y - 0.04) / 2, -s.length / 2 + tread * (k + 0.5));
-    body.castShadow = body.receiveShadow = true;
-    g.add(body);
-  }
-  // Handrail on the open (+X) side.
   const railMat = solid('#2f3134', 0.35, 0.7);
-  const len = Math.hypot(s.length, rise);
-  const rail = new THREE.Mesh(new THREE.CylinderGeometry(0.02, 0.02, len, 8), railMat);
-  rail.position.set(s.width / 2 - 0.04, rise / 2 + 0.9, 0);
-  rail.rotation.x = Math.atan2(s.length, rise);
-  g.add(rail);
-  for (const f of [0.05, 0.5, 0.95]) {
-    const z = -s.length / 2 + s.length * f;
-    const y = rise * f;
-    const post = new THREE.Mesh(new THREE.CylinderGeometry(0.015, 0.015, 0.9, 6), railMat);
-    post.position.set(s.width / 2 - 0.04, y + 0.45, z);
-    g.add(post);
+  const box = (parent: THREE.Object3D, m: THREE.Material, w: number, h: number, d: number, x: number, y: number, z: number) => {
+    if (w <= 0 || h <= 0 || d <= 0) return;
+    const mesh = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), m);
+    mesh.position.set(x, y, z);
+    mesh.castShadow = mesh.receiveShadow = true;
+    parent.add(mesh);
+  };
+  for (const sec of stairSections(s, rise)) {
+    const sg = new THREE.Group();
+    sg.position.set(sec.obb.cx, 0, sec.obb.cz);
+    sg.rotation.y = sec.obb.rot;
+    const w = sec.obb.hx * 2, len = sec.obb.hz * 2;
+    if (sec.kind === 'landing') {
+      box(sg, side, w, sec.y0 - 0.04, len, 0, (sec.y0 - 0.04) / 2, 0);
+      box(sg, mat, w, 0.04, len, 0, sec.y0 - 0.02, 0);
+    } else {
+      const n = Math.max(1, sec.steps);
+      const tread = len / n, riser = (sec.y1 - sec.y0) / n;
+      for (let k = 0; k < n; k++) {
+        const y = sec.y0 + (k + 1) * riser;
+        const z = -len / 2 + tread * (k + 0.5);
+        box(sg, mat, w, 0.04, tread + 0.02, 0, y - 0.02, z);
+        box(sg, side, w, y - 0.04, tread, 0, (y - 0.04) / 2, z);
+      }
+      // Handrail on the flight's +X side.
+      const h = sec.y1 - sec.y0;
+      const railLen = Math.hypot(len, h);
+      const rail = new THREE.Mesh(new THREE.CylinderGeometry(0.02, 0.02, railLen, 8), railMat);
+      rail.position.set(w / 2 - 0.04, sec.y0 + h / 2 + 0.9, 0);
+      rail.rotation.x = Math.atan2(len, h);
+      sg.add(rail);
+      for (const f of [0.05, 0.5, 0.95]) {
+        const post = new THREE.Mesh(new THREE.CylinderGeometry(0.015, 0.015, 0.9, 6), railMat);
+        post.position.set(w / 2 - 0.04, sec.y0 + h * f + 0.45, -len / 2 + len * f);
+        sg.add(post);
+      }
+    }
+    g.add(sg);
   }
   return g;
 }
@@ -324,4 +335,3 @@ export function slabRects(b: SB, holes: Obb[]): Rect[] {
   return rects;
 }
 
-export const stairHole = (s: Stair): Obb => stairObb(s);

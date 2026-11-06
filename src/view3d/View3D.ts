@@ -7,7 +7,8 @@ import type { ChangeKind, Store } from '../model/store';
 import { roomRegions } from '../geometry/rooms';
 import { levelBounds } from '../geometry/walls';
 import { boundsValid } from '../geometry/math';
-import { buildItem, buildLevel, type Pickable, stairHole } from './levelMesh';
+import { buildItem, buildLevel, type Pickable } from './levelMesh';
+import { stairFootprint } from '../geometry/stairs';
 import { groundMaterial } from './materials';
 import type { ModelLibrary } from './models';
 import { buildWalkWorld, step, type WalkWorld, type Walker } from './walk';
@@ -218,7 +219,7 @@ export class View3D {
         cutaway: !walking && view.cutaway && isActive ? 1.1 : null,
         doorsOpen: view.doorsOpen,
         ceiling: walking && !above,
-        holes: below ? below.stairs.map(stairHole) : [],
+        holes: below ? below.stairs.flatMap(stairFootprint) : [],
         model: (id: string) => this.models.get(id),
         shadows: view.quality === 'high',
       };

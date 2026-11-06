@@ -5,7 +5,7 @@ import { uid } from '../model/ids';
 import { itemObb } from '../geometry/checks';
 import { dist, obbCorners, pointInObb, pointSegment, toWorld } from '../geometry/math';
 import { pointInRegion, regionAt, roomRegions } from '../geometry/rooms';
-import { stairObb } from '../geometry/stairs';
+import { stairFootprint, stairSections } from '../geometry/stairs';
 import { endExtensions, JOIN_TOL, openingSpans, wallDir, wallLength, wallObb } from '../geometry/walls';
 
 export interface PlanCallbacks {
@@ -449,7 +449,7 @@ export class PlanView {
       const it = level.items[i];
       if (pointInObb(itemObb(it), w.x, w.z, tol)) return { kind: 'item', id: it.id };
     }
-    for (const s of level.stairs) if (pointInObb(stairObb(s), w.x, w.z, tol)) return { kind: 'stair', id: s.id };
+    for (const s of level.stairs) if (stairFootprint(s).some((f) => pointInObb(f, w.x, w.z, tol))) return { kind: 'stair', id: s.id };
     for (const o of level.openings) {
       const seg = this.openingSegment(level, o);
       if (seg && pointSegment(w, seg.a, seg.b).d < seg.t / 2 + tol) return { kind: 'opening', id: o.id };
@@ -874,36 +874,56 @@ export class PlanView {
     const { ctx } = this;
     const th = this.theme;
     const px = 1 / this.scale;
+    const secs = stairSections(s);
     ctx.save();
-    ctx.translate(s.x, s.z);
-    ctx.rotate(-s.rot);
     ctx.globalAlpha = ghost ? 0.45 : 1;
-    ctx.fillStyle = ghost ? 'transparent' : withAlpha(th.item, 0.9);
-    ctx.strokeStyle = selected ? th.accent : th.wall;
-    ctx.lineWidth = (selected ? 2.5 : 1.2) * px;
-    ctx.fillRect(-s.width / 2, -s.length / 2, s.width, s.length);
-    ctx.strokeRect(-s.width / 2, -s.length / 2, s.width, s.length);
-    const n = Math.max(2, Math.round(s.length / 0.27));
-    ctx.lineWidth = px;
-    ctx.beginPath();
-    for (let i = 1; i < n; i++) {
-      const z = -s.length / 2 + (s.length * i) / n;
-      ctx.moveTo(-s.width / 2, z); ctx.lineTo(s.width / 2, z);
+    // Climb path through the centre of each section, used for the arrow.
+    const path: Vec2[] = [];
+    for (const sec of secs) {
+      const { hx, hz } = sec.obb;
+      ctx.save();
+      ctx.translate(sec.obb.cx, sec.obb.cz);
+      ctx.rotate(-sec.obb.rot);
+      ctx.fillStyle = ghost ? 'transparent' : withAlpha(th.item, 0.9);
+      ctx.strokeStyle = selected ? th.accent : th.wall;
+      ctx.lineWidth = (selected ? 2.5 : 1.2) * px;
+      ctx.fillRect(-hx, -hz, hx * 2, hz * 2);
+      ctx.strokeRect(-hx, -hz, hx * 2, hz * 2);
+      if (sec.kind === 'flight') {
+        const n = Math.max(1, sec.steps);
+        ctx.lineWidth = px;
+        ctx.beginPath();
+        for (let i = 1; i < n; i++) {
+          const z = -hz + (hz * 2 * i) / n;
+          ctx.moveTo(-hx, z); ctx.lineTo(hx, z);
+        }
+        ctx.stroke();
+      }
+      ctx.restore();
+      if (sec.kind === 'flight') {
+        const [ax, az] = toWorld(sec.obb, 0, -sec.obb.hz + 0.15);
+        const [bx, bz] = toWorld(sec.obb, 0, sec.obb.hz - 0.15);
+        path.push({ x: ax, z: az }, { x: bx, z: bz });
+      } else {
+        path.push({ x: sec.obb.cx, z: sec.obb.cz });
+      }
     }
-    ctx.stroke();
-    // Arrow pointing up the stairs (local +Z).
+    // Arrow pointing up the stairs.
     ctx.strokeStyle = selected ? th.accent : th.door;
     ctx.lineWidth = 1.6 * px;
     ctx.beginPath();
-    ctx.moveTo(0, -s.length / 2 + 0.15);
-    ctx.lineTo(0, s.length / 2 - 0.15);
-    ctx.moveTo(-0.15, s.length / 2 - 0.35);
-    ctx.lineTo(0, s.length / 2 - 0.15);
-    ctx.lineTo(0.15, s.length / 2 - 0.35);
+    path.forEach((p, i) => (i ? ctx.lineTo(p.x, p.z) : ctx.moveTo(p.x, p.z)));
+    const end = path[path.length - 1], prev = path[path.length - 2] ?? end;
+    const a = Math.atan2(end.z - prev.z, end.x - prev.x);
+    for (const da of [2.6, -2.6]) {
+      ctx.moveTo(end.x, end.z);
+      ctx.lineTo(end.x + Math.cos(a + da) * 0.22, end.z + Math.sin(a + da) * 0.22);
+    }
     ctx.stroke();
     ctx.restore();
     if (!ghost) {
-      const [x, z] = toWorld(stairObb(s), 0, -s.length / 2 - 0.2);
+      const first = secs[0].obb;
+      const [x, z] = toWorld(first, 0, -first.hz - 0.2);
       this.text({ x, z }, 'UP', 10, th.door, true);
     }
   }

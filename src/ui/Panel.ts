@@ -274,16 +274,35 @@ export class Panel {
     const n = stepCount(rise);
     return [
       header('Stairs', 'stairs', () => s.deleteSelection()),
+      section('Shape', [
+        segmented([{ id: 'straight', label: 'Straight' }, { id: 'L', label: 'L-shaped' }, { id: 'U', label: 'U-shaped' }], st.shape ?? 'straight',
+          (v) => edit((x) => {
+            if (v === 'straight') { delete x.shape; delete x.turn; delete x.length2; return; }
+            x.shape = v as 'L' | 'U';
+            x.turn ??= 'right';
+            // Split the run so the total stays similar.
+            if (!x.length2) {
+              const total = x.length;
+              x.length = Math.max(1, Math.round(total * 55) / 100);
+              x.length2 = Math.max(0.8, Math.round((total - x.length) * 100) / 100);
+            }
+          }, uid())),
+        st.shape ? segmented([{ id: 'left', label: 'Turns left' }, { id: 'right', label: 'Turns right' }], st.turn ?? 'right',
+          (v) => edit((x) => { x.turn = v as 'left' | 'right'; }, uid())) : null,
+      ].filter(Boolean) as Node[]),
       section('Dimensions', [
         h('div', { class: 'grid-2' },
           this.lengthField('Width', () => cur().width, (v) => edit((x) => { x.width = v; }, `st-w-${st.id}`), 0.5, 5),
-          this.lengthField('Run length', () => cur().length, (v) => edit((x) => { x.length = v; }, `st-l-${st.id}`), 1, 15)),
+          this.lengthField(st.shape ? 'First flight' : 'Run length', () => cur().length, (v) => edit((x) => { x.length = v; }, `st-l-${st.id}`), 0.5, 15)),
+        st.shape ? this.lengthField('Second flight', () => cur().length2 ?? cur().length, (v) => edit((x) => { x.length2 = v; }, `st-l2-${st.id}`), 0.5, 15) : null,
         this.numberField('Rotation', '°', () => Math.round(((cur().rot * 180) / Math.PI) * 10) / 10, (v) => edit((x) => { x.rot = (v * Math.PI) / 180; }, `st-r-${st.id}`), -360, 360, 15),
         h('div', { class: 'stat-row' },
           stat('Rise', formatLength(rise, s.view.units)), stat('Steps', String(n)),
-          stat('Riser', formatLength(rise / n, s.view.units, true)), stat('Tread', formatLength(cur().length / n, s.view.units, true))),
+          stat('Riser', formatLength(rise / n, s.view.units, true)),
+          stat('Tread', formatLength((cur().length + (cur().shape ? (cur().length2 ?? cur().length) : 0)) / n, s.view.units, true))),
         !above ? h('p', { class: 'warn small' }, icon('warning', 14), ' There is no level above, so these stairs lead nowhere yet.') : null,
-        rise / n > 0.2 ? h('p', { class: 'warn small' }, icon('warning', 14), ' Steep: risers above 20 cm. Consider a longer run.') : null,
+        (cur().length + (cur().shape ? (cur().length2 ?? cur().length) : 0)) / n < 0.18
+          ? h('p', { class: 'warn small' }, icon('warning', 14), ' Very steep: treads are shorter than 18 cm. Make the run longer or use an L/U shape.') : null,
         h('div', { class: 'btn-row' },
           h('button', { class: 'btn', type: 'button', onclick: () => edit((x) => { x.rot = norm(x.rot + Math.PI); }, uid()) }, icon('flip', 16), 'Reverse direction'),
           h('button', { class: 'btn', type: 'button', onclick: () => edit((x) => { x.rot = norm(x.rot + Math.PI / 2); }, uid()) }, icon('rotate', 16), 'Rotate 90°'),

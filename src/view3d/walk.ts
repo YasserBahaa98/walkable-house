@@ -1,7 +1,7 @@
 import type { Level } from '../model/types';
 import { itemObb } from '../geometry/checks';
 import { type Obb, pushCircle } from '../geometry/math';
-import { stairHeight, stairProgress, stairRise } from '../geometry/stairs';
+import { stairHeightAt, stairRise } from '../geometry/stairs';
 import { solidObbs } from '../geometry/walls';
 
 export const PLAYER_RADIUS = 0.22;
@@ -44,9 +44,9 @@ export function groundHeight(world: WalkWorld, x: number, z: number, y: number):
   for (const l of world.levels) {
     for (const { s, rise } of l.stairs) {
       if (y < l.elevation - 0.6 || y > l.elevation + rise + 0.6) continue;
-      const t = stairProgress(s, x, z);
-      if (t === null) continue;
-      const h = l.elevation + stairHeight(s, rise, t);
+      const rel = stairHeightAt(s, rise, x, z);
+      if (rel === null) continue;
+      const h = l.elevation + rel;
       const diff = Math.abs(h - y);
       if (diff < bestDiff && diff < 0.7) { bestDiff = diff; ground = h; }
     }

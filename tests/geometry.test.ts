@@ -3,7 +3,7 @@ import { obbOverlap, pushCircle, segmentObb, toLocal, toWorld } from '../src/geo
 import { endExtensions, openingSpans, solidObbs, splitWall, wallPieces } from '../src/geometry/walls';
 import { roomRegions, regionAt } from '../src/geometry/rooms';
 import { checkLevel } from '../src/geometry/checks';
-import { stairHeight, stairProgress, stepCount } from '../src/geometry/stairs';
+import { stairHeightAt, stairObb, stairSections, stepCount } from '../src/geometry/stairs';
 import { boxLevel, door, wall, windowOn } from './helpers';
 
 describe('oriented boxes', () => {
@@ -127,14 +127,42 @@ describe('checks', () => {
 
 describe('stairs', () => {
   const s = { id: 's', x: 0, z: 0, rot: 0, width: 1, length: 3 };
-  it('maps the footprint to climb progress', () => {
-    expect(stairProgress(s, 0, -1.5)).toBeCloseTo(0);
-    expect(stairProgress(s, 0, 1.5)).toBeCloseTo(1);
-    expect(stairProgress(s, 2, 0)).toBeNull();
-  });
-  it('reaches the full rise at the top', () => {
+  it('keeps straight stairs centred on their footprint', () => {
+    const [sec] = stairSections(s, 3);
+    expect(sec.obb).toMatchObject({ cx: 0, cz: 0, hx: 0.5, hz: 1.5 });
     expect(stepCount(3)).toBe(17);
-    expect(stairHeight(s, 3, 1)).toBeCloseTo(3);
-    expect(stairHeight(s, 3, 0)).toBeCloseTo(0);
+  });
+
+  it('gives walking heights from bottom to top', () => {
+    expect(stairHeightAt(s, 3, 0, -1.5)).toBeCloseTo(0);
+    expect(stairHeightAt(s, 3, 0, 1.5)).toBeCloseTo(3);
+    expect(stairHeightAt(s, 3, 2, 0)).toBeNull();
+  });
+
+  it('builds L-shaped stairs with a landing at the right height', () => {
+    const l = { ...s, shape: 'L' as const, turn: 'left' as const, length: 2, length2: 2 };
+    const secs = stairSections(l, 3);
+    expect(secs.map((x) => x.kind)).toEqual(['flight', 'landing', 'flight']);
+    expect(secs[0].steps + secs[2].steps).toBe(17);
+    expect(secs[1].y0).toBeCloseTo(secs[0].y1);
+    expect(secs[2].y1).toBeCloseTo(3);
+    // A left turn (seen walking up +Z) sends the second flight towards +X.
+    expect(secs[2].obb.cx).toBeGreaterThan(secs[0].obb.cx);
+    // The footprint is centred on the stair position.
+    const o = stairObb(l);
+    expect(o.cx).toBeCloseTo(0);
+    expect(o.cz).toBeCloseTo(0);
+    expect(o.hx * 2).toBeCloseTo(3);
+    expect(o.hz * 2).toBeCloseTo(3);
+  });
+
+  it('builds U-shaped stairs that return alongside the first flight', () => {
+    const u = { ...s, shape: 'U' as const, turn: 'right' as const, length: 2.5, length2: 2.5 };
+    const secs = stairSections(u, 3);
+    expect(secs[2].obb.cx).toBeLessThan(secs[0].obb.cx);
+    expect(secs[2].obb.cz).toBeCloseTo(secs[0].obb.cz);
+    const landing = stairHeightAt(u, 3, secs[1].obb.cx, secs[1].obb.cz)!;
+    expect(landing).toBeGreaterThan(1.2);
+    expect(landing).toBeLessThan(1.8);
   });
 });

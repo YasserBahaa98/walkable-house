@@ -1,7 +1,7 @@
 import type { Item, Level, Selection } from '../model/types';
 import { type Obb, obbOverlap } from './math';
 import { roomRegions } from './rooms';
-import { stairObb } from './stairs';
+import { stairFootprint } from './stairs';
 import { endExtensions, openingSpans, wallDir, wallLength, wallObb } from './walls';
 
 export interface Issue {
@@ -41,7 +41,7 @@ export function checkLevel(level: Level): Issue[] {
       }
     }
     for (const s of level.stairs) {
-      if (obbOverlap(ba, stairObb(s)) > TOL) {
+      if (stairFootprint(s).some((f) => obbOverlap(ba, f) > TOL)) {
         issues.push({ severity: 'warning', message: `${a.name} blocks the stairs`, target: { kind: 'item', id: a.id } });
       }
     }

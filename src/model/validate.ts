@@ -111,10 +111,16 @@ export function parseItem(i: Record<string, unknown>): Item {
 }
 
 function parseStair(s: Record<string, unknown>): Stair {
-  return {
+  const out: Stair = {
     id: str(s.id) || uid('s'), x: num(s.x, 0), z: num(s.z, 0), rot: num(s.rot, 0, -100, 100),
-    width: num(s.width, 1, 0.5, 5), length: num(s.length, 3, 1, 15),
+    width: num(s.width, 1, 0.5, 5), length: num(s.length, 3, 0.5, 15),
   };
+  if (s.shape === 'L' || s.shape === 'U') {
+    out.shape = s.shape;
+    out.turn = s.turn === 'left' ? 'left' : 'right';
+    if (s.length2 !== undefined) out.length2 = num(s.length2, out.length, 0.5, 15);
+  }
+  return out;
 }
 
 const isObj = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null && !Array.isArray(v);

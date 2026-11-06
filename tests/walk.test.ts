@@ -41,4 +41,18 @@ describe('walking', () => {
     w = walk(world, w, 1, 0, 2.2);
     expect(w.y).toBeGreaterThan(2.9);
   });
+
+  it('climbs an L-shaped stair via its landing', () => {
+    // First flight climbs +Z from z = 0 to 2, landing, then turns left (+X).
+    const stair = { id: 'l', x: 1.5, z: 1.5, rot: 0, width: 1, length: 2, shape: 'L' as const, turn: 'left' as const, length2: 2 };
+    const ground: Level = { ...boxLevel(), id: 'g', walls: [], rooms: [], stairs: [stair] };
+    const upper: Level = { ...boxLevel(), id: 'u', elevation: 3, walls: [], rooms: [] };
+    const world = buildWalkWorld([ground, upper]);
+    let w: Walker = { x: 0.5, z: 0.05, y: 0 };
+    w = walk(world, w, 0, 1, 1.6);    // up the first flight onto the landing
+    expect(w.y).toBeGreaterThan(1.2);
+    expect(w.y).toBeLessThan(1.8);
+    w = walk(world, w, 1, 0, 1.9);    // turn, climb the second flight and step off the top
+    expect(w.y).toBeGreaterThan(2.9);
+  });
 });
