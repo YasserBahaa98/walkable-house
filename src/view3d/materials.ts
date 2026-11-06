@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import type { FloorMaterial } from '../model/types';
+import type { Finish } from '../model/styles';
 
 // Surfaces use photo-scanned PBR textures (public/textures, CC0) loaded on
 // demand. Until a texture has loaded (or when it can't be fetched offline) the
@@ -428,8 +429,13 @@ function cached<T extends THREE.MeshStandardMaterial>(key: string, make: () => T
 
 /** Oiled wood with real grain, tinted by `color`. */
 export function woodMaterial(color: string): THREE.MeshStandardMaterial {
-  return cached(`wood|${color}`, () => pbr(new THREE.MeshStandardMaterial({ color, roughness: 0.6 }),
-    { name: 'wood', maps: 'cnr', size: 1.2, normalScale: 0.6 }));
+  // Pale woods use a softer grain; dark grain lines look dirty on birch or light oak.
+  const hsl = { h: 0, s: 0, l: 0 };
+  new THREE.Color(color).getHSL(hsl, THREE.SRGBColorSpace);
+  const spec: PbrSpec = hsl.l > 0.55
+    ? { name: 'wood_soft', maps: 'c', size: 1.2, normalFrom: 'wood', normalScale: 0.4 }
+    : { name: 'wood', maps: 'cnr', size: 1.2, normalScale: 0.6 };
+  return cached(`wood|${color}`, () => pbr(new THREE.MeshStandardMaterial({ color, roughness: 0.6 }), spec));
 }
 
 /** Smooth painted or lacquered surface (white wardrobes, kitchen fronts). */
@@ -467,3 +473,46 @@ export function metalMaterial(color: string, roughness = 0.35): THREE.MeshStanda
  * emission stands in for light bounced off the floor and walls (daytime only).
  */
 export const ceilingMaterial = new THREE.MeshStandardMaterial({ color: '#f5f3ef', roughness: 0.95, emissive: '#f5f3ef', emissiveIntensity: 0.3 });
+
+/** Leather: fine grain and a soft waxed sheen. */
+export function leatherMaterial(color: string): THREE.MeshPhysicalMaterial {
+  return cached(`leather|${color}`, () => pbr(effects(new THREE.MeshPhysicalMaterial({ color, roughness: 0.55, clearcoat: 0.3, clearcoatRoughness: 0.45 })),
+    { name: 'leather', maps: 'cnr', size: 0.4, normalScale: 0.7 }));
+}
+
+/** Velvet: woven texture with a strong sheen. */
+export function velvetMaterial(color: string): THREE.MeshPhysicalMaterial {
+  return cached(`velvet|${color}`, () => {
+    const sheen = new THREE.Color(color).lerp(new THREE.Color('#ffffff'), 0.5);
+    return pbr(effects(new THREE.MeshPhysicalMaterial({ color, roughness: 1, sheen: 1, sheenRoughness: 0.35, sheenColor: sheen })),
+      { name: 'fabric', maps: 'cn', size: 0.3, normalScale: 0.4 });
+  });
+}
+
+/** Polished stone such as marble or terrazzo worktops. */
+export function stoneMaterial(color: string): THREE.MeshPhysicalMaterial {
+  return cached(`stone|${color}`, () => pbr(effects(new THREE.MeshPhysicalMaterial({ color, roughness: 0.25, clearcoat: 0.6, clearcoatRoughness: 0.15 })),
+    { name: 'floor_marble', maps: 'c', size: 1.2 }));
+}
+
+/** Clear or tinted glass (table tops, cabinet doors). */
+export function glassFinish(color: string): THREE.MeshStandardMaterial {
+  return cached(`glass|${color}`, () => new THREE.MeshStandardMaterial({
+    color, roughness: 0.05, metalness: 0.1, transparent: true, opacity: 0.35, depthWrite: false,
+  }));
+}
+
+/** Material for a finish, tinted by `color`. */
+export function finishMaterial(finish: Finish, color: string): THREE.Material {
+  switch (finish) {
+    case 'wood': return woodMaterial(color);
+    case 'painted': return paintedMaterial(color);
+    case 'fabric': return fabricMaterial(color);
+    case 'velvet': return velvetMaterial(color);
+    case 'leather': return leatherMaterial(color);
+    case 'metal': return metalMaterial(color, 0.35);
+    case 'stone': return stoneMaterial(color);
+    case 'glass': return glassFinish(color);
+    case 'plastic': return paintedMaterial(color, 0.35);
+  }
+}

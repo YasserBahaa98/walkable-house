@@ -168,4 +168,26 @@ test.describe('Walkable House', () => {
     await expect(panel.getByRole('button', { name: 'Furnish empty rooms' })).toBeVisible();
     expect(errors).toEqual([]);
   });
+
+  test('styles a chair with per-part materials, and undoes it', async ({ page }) => {
+    const errors = await freshStart(page);
+    await page.getByRole('button', { name: 'Explore demo' }).click();
+    await page.getByRole('tab', { name: 'Library' }).click();
+    await page.getByRole('button', { name: /^Chair/ }).first().click();
+    await page.getByRole('tab', { name: 'Inspect' }).click();
+    const panel = page.locator('.panel');
+    await expect(panel.getByLabel('Legs', { exact: true })).toHaveValue('tapered');
+    await panel.getByLabel('Legs', { exact: true }).selectOption('hairpin');
+    await panel.getByLabel('Arms', { exact: true }).selectOption('yes');
+    await panel.getByLabel('Seat / cushions', { exact: true }).selectOption('fabric');
+    await expect(panel.getByLabel('Legs', { exact: true })).toHaveValue('hairpin');
+    await expect(panel.getByRole('button', { name: 'Reset seat / cushions' })).toBeVisible();
+    await page.keyboard.press('Control+z');
+    await expect(panel.getByLabel('Seat / cushions', { exact: true })).toHaveValue('default');
+    await panel.getByLabel('Type', { exact: true }).selectOption('sideboard');
+    await expect(panel.getByLabel('Doors', { exact: true })).toBeVisible();
+    await panel.getByLabel('Type', { exact: true }).selectOption('box');
+    await expect(panel.getByText('labelled with its name')).toBeVisible();
+    expect(errors).toEqual([]);
+  });
 });

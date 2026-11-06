@@ -22,7 +22,7 @@ from PIL import Image, ImageOps, ImageStat
 OUT = os.path.join(os.path.dirname(__file__), '..', 'public', 'textures')
 SIZES = {'1k': 1024, '512': 512}
 
-# name: (source, asset id, maps, detail)
+# name: (source, asset id, maps, detail: False, True, or a grain contrast factor)
 MATERIALS = {
     'floor_oak': ('ph', 'laminate_floor_02', 'cnr', False),
     'floor_walnut': ('ph', 'wood_floor', 'cnr', False),
@@ -38,6 +38,9 @@ MATERIALS = {
     'wood': ('ph', 'oak_veneer_01', 'cnr', True),
     'fabric': ('acg', 'Fabric086', 'cnr', True),
     'rug': ('acg', 'Carpet016', 'c', True),
+    'leather': ('ph', 'brown_leather', 'cnr', True),
+    # Pale woods (birch, light oak) show much less grain contrast.
+    'wood_soft': ('ph', 'oak_veneer_01', 'c', 0.45),
 }
 
 
@@ -65,11 +68,11 @@ def ambientcg(asset: str) -> dict:
     return {'c': pick('Color'), 'n': pick('NormalGL'), 'r': pick('Roughness')}
 
 
-def detail(img: Image.Image) -> Image.Image:
+def detail(img: Image.Image, contrast: float = 1.0) -> Image.Image:
     """Grey version whose average is ~0.92, so `colour × map` keeps the colour."""
     g = ImageOps.grayscale(img)
     mean = ImageStat.Stat(g).mean[0] or 1
-    g = g.point(lambda v: max(0, min(255, round(v * 235 / mean))))
+    g = g.point(lambda v: max(0, min(255, round(235 + (v * 235 / mean - 235) * contrast))))
     return g.convert('RGB')
 
 
@@ -101,7 +104,10 @@ def main():
         print(name, '<-', src, asset)
         imgs = polyhaven(asset) if src == 'ph' else ambientcg(asset)
         if 'c' in maps:
-            save(detail(imgs['c']) if is_detail else imgs['c'], name, 'col')
+            c = imgs['c']
+            if is_detail:
+                c = detail(c, 1.0 if is_detail is True else is_detail)
+            save(c, name, 'col')
         if 'n' in maps:
             save(imgs['n'], name, 'nor')
         if 'r' in maps:

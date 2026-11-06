@@ -31,6 +31,9 @@ macOS, Linux, tablets and phones. Your work is saved locally; nothing is uploade
 - **Furnish room**: fills a room with furniture that suits its name and size (bedroom, living room, kitchen, dining room, bathroom, WC, study, hall or landing; names in several languages). Beds and sofas go against walls facing into the room, the TV faces the sofa, chairs sit at tables and desks, plants go in corners, and nothing blocks doors, stairs or windows. Press again for another layout; **Furnish empty rooms** does a whole level.
 - **Wall paint** per room (presets or any colour), painted only on the faces of the walls around that room. Floor finish per room.
 - Decor: wall art, mirrors, curtains, vases with flowers, nightstands, side tables, rugs, plants and lamps.
+- **Furniture styles**: arms or none, solid/slatted/upholstered backs, round-tapered, square, hairpin or sled legs, round or rectangular tops on four legs or a pedestal, and for storage the number of doors and drawers, open or closed shelves and bar, knob or push handles. Door and drawer counts follow the piece's size unless you set them.
+- **Materials per part**: wood, painted, fabric, velvet, leather, metal, stone, glass or plastic for the whole piece and separately for legs, seat, top, fronts or frame (oak legs on a grey fabric chair).
+- Sideboards and TV units, stools and bar stools, ottomans and poufs, bunk beds, chests of drawers and open shelving, plus a **labelled box** of the right size, colour and material for anything else.
 
 **Experience (3D)**
 - Orbit view showing the active level and those below, optional cutaway walls.

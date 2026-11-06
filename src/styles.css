@@ -253,6 +253,8 @@ select.input { padding-right: 4px; }
 .color { width: 44px; height: 30px; border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 2px; background: var(--surface-2); cursor: pointer; }
 .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
 .grid-3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+.part-row { display: grid; grid-template-columns: 1fr auto auto; gap: 8px; align-items: end; margin-bottom: 6px; }
+.part-row .color { height: 34px; }
 .btn-row { display: flex; flex-wrap: wrap; gap: 6px; }
 
 .toggle { display: flex; align-items: center; justify-content: space-between; gap: 10px; cursor: pointer; font-size: 13px; }

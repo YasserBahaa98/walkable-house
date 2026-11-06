@@ -1,5 +1,6 @@
 import { uid } from './ids';
 import type { FloorMaterial, FurnitureType, Item, Level, Opening, Project, Roof, Room, Stair, Underlay, Vec2, Wall } from './types';
+import { isFinish, isPartName, STYLE_FIELDS, validStyleValue, type ItemStyle, type PartStyle, type StyleKey } from './styles';
 
 /**
  * Parse untrusted JSON (imported files, persisted data) into a well-formed Project.
@@ -107,7 +108,8 @@ function parseRoom(r: Record<string, unknown>): Room {
 }
 
 const TYPES: FurnitureType[] = ['bed', 'sofa', 'armchair', 'table', 'chair', 'desk', 'wardrobe', 'bookshelf', 'counter',
-  'fridge', 'tv', 'rug', 'plant', 'lamp', 'toilet', 'bathtub', 'sink', 'art', 'mirror', 'curtain', 'nightstand', 'vase', 'box', 'model'];
+  'fridge', 'tv', 'rug', 'plant', 'lamp', 'toilet', 'bathtub', 'sink', 'art', 'mirror', 'curtain', 'nightstand', 'vase',
+  'sideboard', 'stool', 'ottoman', 'bunkbed', 'dresser', 'shelving', 'box', 'model'];
 export function parseItem(i: Record<string, unknown>): Item {
   const out: Item = {
     id: str(i.id) || uid('i'),
@@ -115,12 +117,33 @@ export function parseItem(i: Record<string, unknown>): Item {
     name: str(i.name) || 'Item',
     x: num(i.x, 0), z: num(i.z, 0), rot: num(i.rot, 0, -100, 100),
     w: num(i.w, 0.8, 0.01, 50), d: num(i.d, 0.6, 0.01, 50), h: num(i.h, 0.8, 0.005, 20),
-    color: typeof i.color === 'string' && /^#[0-9a-f]{6}$/i.test(i.color) ? i.color : '#c4bdb3',
+    color: isColor(i.color) ? i.color : '#c4bdb3',
   };
   if (i.elevation !== undefined) out.elevation = num(i.elevation, 0, 0, 20);
   if (typeof i.modelId === 'string') out.modelId = i.modelId;
+  if (isFinish(i.finish)) out.finish = i.finish;
+  if (isObj(i.style)) {
+    const style: ItemStyle = {};
+    for (const key of Object.keys(STYLE_FIELDS) as StyleKey[]) {
+      if (validStyleValue(key, i.style[key])) (style as Record<string, unknown>)[key] = i.style[key];
+    }
+    if (Object.keys(style).length) out.style = style;
+  }
+  if (isObj(i.parts)) {
+    const parts: Item['parts'] = {};
+    for (const [name, p] of Object.entries(i.parts)) {
+      if (!isPartName(name) || !isObj(p)) continue;
+      const part: PartStyle = {};
+      if (isColor(p.color)) part.color = p.color;
+      if (isFinish(p.finish)) part.finish = p.finish;
+      if (Object.keys(part).length) parts[name] = part;
+    }
+    if (Object.keys(parts).length) out.parts = parts;
+  }
   return out;
 }
+
+const isColor = (v: unknown): v is string => typeof v === 'string' && /^#[0-9a-f]{6}$/i.test(v);
 
 function parseStair(s: Record<string, unknown>): Stair {
   const out: Stair = {

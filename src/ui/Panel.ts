@@ -10,6 +10,7 @@ import { stairRise, stepCount } from '../geometry/stairs';
 import { curveWall, splitWall, wallLength } from '../geometry/walls';
 import { normAngle, round3 as round } from '../geometry/math';
 import { floorSwatch, textureSwatchUrl } from '../view3d/materials';
+import { FINISH_LABELS, FINISHES, PART_LABELS, resolveStyle, STYLE_FIELDS, styleKeys, TYPE_FINISH, TYPE_LABELS, TYPE_PARTS, type Finish, type PartName, type StyleKey } from '../model/styles';
 import type { ModelLibrary } from '../view3d/models';
 import { download, h, icon, iconButton, pickFiles, slug } from './dom';
 import { confirmDialog, promptDialog, toast } from './feedback';
@@ -88,6 +89,7 @@ export class Panel {
       this.tab === 'report' ? JSON.stringify(s.project.levels.map((l) => [l.walls, l.openings, l.rooms, l.items])) : '',
       this.models.length,
       sel?.kind === 'room' ? JSON.stringify([s.find(), s.level.items.length, s.level.walls.length, this.furnishVariant.has(sel.id)]) : '',
+      sel?.kind === 'item' ? JSON.stringify(((it?: Item) => [it?.type, it?.style, it?.finish, it?.parts])(s.find() as Item | undefined)) : '',
     ].join('|');
     const active = document.activeElement;
     const typing = active instanceof HTMLElement && this.body.contains(active) && /INPUT|TEXTAREA|SELECT/.test(active.tagName);
@@ -357,18 +359,22 @@ export class Panel {
     const s = this.store;
     const edit = (fn: (x: Item) => void, key: string) => s.mutate((_p, l) => { const x = l.items.find((q) => q.id === it.id); if (x) fn(x); }, key);
     const cur = () => this.cur<Item>() ?? it;
-    const types = [...new Set(CATALOG.map((c) => c.type))];
-    if (it.type === 'model') types.push('model');
-    const typeSel = h('select', { class: 'input', 'aria-label': 'Type' },
-      ...types.map((t) => h('option', { value: t, selected: t === it.type }, cap(t))));
-    typeSel.addEventListener('change', () => edit((x) => { x.type = typeSel.value as FurnitureType; }, uid()));
+    const types = (Object.keys(TYPE_LABELS) as FurnitureType[]).filter((t) => t !== 'model' || it.type === 'model');
+    const typeSel = select('Type', types.map((t) => ({ id: t, label: TYPE_LABELS[t] })), it.type,
+      (v) => edit((x) => { x.type = v as FurnitureType; delete x.style; delete x.parts; }, uid()));
+    const finishes = [{ id: 'auto', label: TYPE_FINISH[it.type] ? `Default (${FINISH_LABELS[TYPE_FINISH[it.type]!].toLowerCase()})` : 'Auto' },
+      ...FINISHES.map((f) => ({ id: f, label: FINISH_LABELS[f] }))];
+    const finishSel = select('Material', finishes, it.finish ?? 'auto',
+      (v) => edit((x) => { if (v === 'auto') delete x.finish; else x.finish = v as Finish; }, uid()));
     return [
       this.f.liveHeader(() => cur().name, 'sofa', () => s.deleteSelection()),
       section('Details', [
         this.f.text('Name', () => cur().name, (v) => edit((x) => { x.name = v || x.name; }, `it-n-${it.id}`)),
-        h('label', { class: 'field' }, h('span', { class: 'field-label' }, 'Type'), typeSel),
-        this.f.color('Colour', () => cur().color, (v) => edit((x) => { x.color = v; }, `it-c-${it.id}`)),
-      ]),
+        typeSel,
+        h('div', { class: 'grid-2' }, finishSel, this.f.color('Colour', () => cur().color, (v) => edit((x) => { x.color = v; }, `it-c-${it.id}`))),
+        it.type === 'box' ? h('p', { class: 'field-hint' }, 'Shown as a box of the right size and colour, labelled with its name.') : null,
+      ].filter(Boolean) as Node[]),
+      ...this.styleSections(it, edit),
       section('Size', [
         h('div', { class: 'grid-3' },
           this.f.length('Width', () => cur().w, (v) => edit((x) => { x.w = v; }, `it-w-${it.id}`), 0.02, 30),
@@ -386,6 +392,46 @@ export class Panel {
           h('button', { class: 'btn', type: 'button', onclick: () => s.duplicateSelection() }, icon('copy', 16), 'Duplicate')),
       ]),
     ];
+  }
+
+  /** Style options and per-part materials for the item's type. */
+  private styleSections(it: Item, edit: (fn: (x: Item) => void, key: string) => void): Node[] {
+    const out: Node[] = [];
+    const keys = styleKeys(it.type);
+    if (keys.length) {
+      const st = resolveStyle(it);
+      const set = (k: StyleKey, v: unknown) => edit((x) => { x.style = { ...x.style, [k]: v }; }, uid());
+      const fields = keys.map((k) => {
+        const f = STYLE_FIELDS[k];
+        if (f.kind === 'count') {
+          return this.f.number(f.label, '', () => (resolveStyle(this.cur<Item>() ?? it)[k] as number | undefined) ?? 0,
+            (v) => edit((x) => { x.style = { ...x.style, [k]: Math.round(Math.min(f.max, Math.max(f.min, v))) }; }, `it-st-${k}-${it.id}`), f.min, f.max, 1);
+        }
+        return select(f.label, f.options, String(st[k] ?? f.options[0].id), (v) => set(k, v));
+      });
+      out.push(section('Style', [h('div', { class: 'grid-2' }, ...fields)]));
+    }
+    const parts = TYPE_PARTS[it.type] ?? [];
+    if (parts.length) {
+      const rows = parts.map((p) => {
+        const cur = it.parts?.[p];
+        const setPart = (fn: (x: NonNullable<Item['parts']>[PartName]) => void) => edit((x) => {
+          const next = { ...x.parts?.[p] };
+          fn(next);
+          const parts = { ...x.parts, [p]: next };
+          if (!next.color && !next.finish) delete parts[p];
+          if (Object.keys(parts).length) x.parts = parts; else delete x.parts;
+        }, uid());
+        const fin = select(PART_LABELS[p], [{ id: 'default', label: 'Default' }, ...FINISHES.map((f) => ({ id: f, label: FINISH_LABELS[f] }))],
+          cur?.finish ?? 'default', (v) => setPart((x) => { if (x) { if (v === 'default') delete x.finish; else x.finish = v as Finish; } }));
+        const color = h('input', { class: 'color', type: 'color', 'aria-label': `${PART_LABELS[p]} colour`, value: cur?.color ?? it.color });
+        color.addEventListener('change', () => setPart((x) => { if (x) x.color = color.value; }));
+        const reset = cur ? iconButton('undo', `Reset ${PART_LABELS[p].toLowerCase()}`, () => setPart((x) => { if (x) { delete x.color; delete x.finish; } })) : null;
+        return h('div', { class: 'part-row' }, fin, color, reset);
+      });
+      out.push(section('Materials per part', [h('p', { class: 'field-hint' }, 'Give parts their own material, e.g. oak legs with a grey fabric seat.'), ...rows]));
+    }
+    return out;
   }
 
   private stairSection(st: Stair): Node[] {
@@ -656,4 +702,11 @@ export class Panel {
     if (!src) { src = floorSwatch(f); this.swatches.set(f, src); }
     return src;
   }
+}
+
+/** Labelled drop-down. */
+function select(label: string, options: { id: string; label: string }[], value: string, onChange: (id: string) => void): HTMLElement {
+  const sel = h('select', { class: 'input', 'aria-label': label }, ...options.map((o) => h('option', { value: o.id, selected: o.id === value }, o.label)));
+  sel.addEventListener('change', () => onChange(sel.value));
+  return h('label', { class: 'field' }, h('span', { class: 'field-label' }, label), sel);
 }

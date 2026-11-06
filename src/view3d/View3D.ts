@@ -268,7 +268,7 @@ export class View3D {
       const itemIds = new Set<string>();
       for (const it of level.items) {
         itemIds.add(it.id);
-        const shapeKey = `${it.type}|${it.w}|${it.d}|${it.h}|${it.color}|${it.modelId ?? ''}|${opts.shadows}`;
+        const shapeKey = `${it.type}|${it.w}|${it.d}|${it.h}|${it.color}|${it.modelId ?? ''}|${opts.shadows}|${it.finish ?? ''}|${JSON.stringify(it.style ?? '')}|${JSON.stringify(it.parts ?? '')}|${it.type === 'box' ? it.name : ''}`;
         let entry = lv.items.get(it.id);
         if (!entry || entry.key !== shapeKey) {
           if (entry) { disposeGroup(entry.group); entry.group.removeFromParent(); }
