@@ -94,4 +94,32 @@ test.describe('Walkable House', () => {
     await page.keyboard.press('?');
     await expect(page.getByRole('dialog', { name: 'Walkable House' })).toContainText('Keyboard shortcuts');
   });
+
+  test('exports a GLB model and round-trips a project file', async ({ page }) => {
+    await freshStart(page);
+    await page.getByRole('button', { name: 'Explore demo' }).click();
+    await page.getByRole('button', { name: 'Export' }).click();
+    const glbDl = page.waitForEvent('download');
+    await page.getByRole('menuitem', { name: /3D model/ }).click();
+    const glb = await glbDl;
+    expect(glb.suggestedFilename()).toBe('demo-house.glb');
+    const fs = await import('node:fs');
+    const glbPath = await glb.path();
+    const head = fs.readFileSync(glbPath).subarray(0, 4).toString('ascii');
+    expect(head).toBe('glTF');
+    expect(fs.statSync(glbPath).size).toBeGreaterThan(50_000);
+
+    // Save a project file, change the project, then open the saved file again.
+    const projDl = page.waitForEvent('download');
+    await page.keyboard.press('Control+s');
+    const proj = await projDl;
+    const projPath = await proj.path();
+    await page.locator('.project-name').fill('Changed name');
+    await page.locator('.project-name').press('Enter');
+    const chooser = page.waitForEvent('filechooser');
+    await page.getByRole('button', { name: /Import/ }).first().click();
+    await (await chooser).setFiles({ name: 'demo.walkhouse.json', mimeType: 'application/json', buffer: fs.readFileSync(projPath) });
+    await page.getByRole('dialog', { name: 'Open project' }).getByRole('button', { name: 'Open' }).click();
+    await expect(page.locator('.project-name')).toHaveValue('Demo house');
+  });
 });
