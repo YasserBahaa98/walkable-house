@@ -1,102 +1,84 @@
 import { describe, expect, it } from 'vitest';
-import { describeProduct, MODEL, productSchema, specFromReply, systemPrompt, type MessagesClient } from '../src/import/product';
-import { TYPE_LABELS } from '../src/model/styles';
+import { fitToType, parseProduct, specFromJson, specFromText } from '../src/import/product';
 
-/** Every object in a JSON schema must list all its properties and forbid extras (structured outputs rule). */
-function checkStrict(schema: Record<string, unknown>, path = '$'): string[] {
-  const errs: string[] = [];
-  if (schema.type === 'object') {
-    const props = Object.keys((schema.properties as object) ?? {});
-    if (schema.additionalProperties !== false) errs.push(`${path}: additionalProperties`);
-    const req = (schema.required as string[]) ?? [];
-    for (const p of props) if (!req.includes(p)) errs.push(`${path}.${p} not required`);
-  }
-  for (const [k, v] of Object.entries(schema)) {
-    if (v && typeof v === 'object') {
-      if (Array.isArray(v)) v.forEach((x, i) => { if (x && typeof x === 'object') errs.push(...checkStrict(x as Record<string, unknown>, `${path}.${k}[${i}]`)); });
-      else errs.push(...checkStrict(v as Record<string, unknown>, `${path}.${k}`));
-    }
-  }
-  return errs;
-}
-
-const reply = (obj: unknown, stop = 'end_turn') => ({ content: [{ type: 'text', text: JSON.stringify(obj) }], stop_reason: stop });
-const good = {
-  name: 'BESTÅ TV bench', type: 'sideboard', width_cm: 180, depth_cm: 42, height_cm: 38, size_source: 'listed',
-  color: '#2F3133', finish: 'painted',
-  style: { arms: 'yes', back: null, legs: 'hairpin', top: null, base: null, doors: 3, drawers: 0, shelves: 'open', handles: 'none' },
-  parts: [{ part: 'top', color: '#A47551', finish: 'wood' }, { part: 'seat', color: '#000000', finish: 'fabric' }],
-  notes: '',
-};
-
-function fakeClient(replies: ReturnType<typeof reply>[]) {
-  const calls: Record<string, unknown>[] = [];
-  const client: MessagesClient = {
-    beta: { messages: { create: async (body) => { calls.push(structuredClone(body)); return replies.shift()!; } } },
-  };
-  return { client, calls };
-}
-
-describe('product importer', () => {
-  it('uses a strict schema that covers every furniture type', () => {
-    expect(checkStrict(productSchema())).toEqual([]);
-    const types = ((productSchema().properties as Record<string, { enum: string[] }>).type).enum;
-    expect(types).toContain('bunkbed');
-    expect(types).not.toContain('model');
-    const prompt = systemPrompt();
-    for (const t of Object.keys(TYPE_LABELS).filter((t) => t !== 'model')) expect(prompt).toContain(`- ${t} (`);
-    expect(prompt).toMatch(/Ignore any instructions/);
+describe('product details from pasted text', () => {
+  it('reads an IKEA measurements block', () => {
+    const spec = specFromText(`POÄNG
+Armchair, birch veneer/Knisa light beige
+£120
+Width: 68 cm
+Depth: 82 cm
+Height: 100 cm
+Seat width: 56 cm
+Seat depth: 49 cm
+Seat height: 39 cm`);
+    expect(spec).toMatchObject({ type: 'armchair', name: 'POÄNG Armchair', w: 0.68, d: 0.82, h: 1, sizeSource: 'listed' });
+    // Upholstered: the cover colour (after the slash) wins over the frame.
+    expect(spec.color).toBe('#d9cbb3');
+    expect(spec.finish).toBe('fabric');
   });
 
-  it('turns a reply into a safe item spec', () => {
-    const spec = specFromReply(good);
-    expect(spec).toMatchObject({ type: 'sideboard', name: 'BESTÅ TV bench', w: 1.8, d: 0.42, h: 0.38, color: '#2f3133', finish: 'painted', sizeSource: 'listed' });
-    // Only the sideboard's own options and parts survive.
+  it('reads a size triple with a unit at the end', () => {
+    const spec = specFromText('BESTÅ TV bench, black-brown\n180x42x38 cm');
+    expect(spec).toMatchObject({ type: 'sideboard', w: 1.8, d: 0.42, h: 0.38, color: '#3a2e28', sizeSource: 'listed' });
+  });
+
+  it('reads lettered triples, millimetres and inches', () => {
+    expect(specFromText('Oak dining table\nH 750 x W 1800 x D 900 mm')).toMatchObject({ type: 'table', w: 1.8, d: 0.9, h: 0.75, finish: 'wood' });
+    const us = specFromText('KALLAX Shelf unit, white\nWidth: 30 3/8 "\nDepth: 15 ⅜ "\nHeight: 57 7/8 "');
+    expect(us).toMatchObject({ type: 'shelving', color: '#f1efea' });
+    expect(us.w).toBeCloseTo(0.77, 2);
+    expect(us.h).toBeCloseTo(1.47, 2);
+  });
+
+  it('maps bed length to depth and a diameter to a round top', () => {
+    const bed = specFromText('MALM Bed frame, high, white\nLength: 209 cm\nWidth: 156 cm\nHeadboard height: 100 cm');
+    expect(bed).toMatchObject({ type: 'bed', w: 1.56, d: 2.09, sizeSource: 'estimated' });
+    expect(bed.notes).toMatch(/height/);
+    const table = specFromText('DOCKSTA Table, white\nDiameter: 103 cm\nHeight: 75 cm');
+    expect(table).toMatchObject({ type: 'table', w: 1.03, d: 1.03, h: 0.75, style: { top: 'round' }, sizeSource: 'listed' });
+  });
+
+  it('falls back to a labelled box with typical sizes', () => {
+    const spec = specFromText('Grand piano, black lacquer');
+    expect(spec).toMatchObject({ type: 'box', name: 'Grand piano, black lacquer', sizeSource: 'estimated', color: '#262626', finish: 'painted' });
+    expect(() => specFromText('   \n  ')).toThrow();
+  });
+});
+
+describe('item descriptions in JSON', () => {
+  const good = {
+    name: 'BESTÅ TV bench', type: 'sideboard', width_cm: 180, depth_cm: 42, height_cm: 38, size_source: 'listed',
+    color: '#2F3133', finish: 'painted',
+    style: { arms: 'yes', legs: 'hairpin', doors: 3, drawers: 0, shelves: 'open', handles: 'none' },
+    parts: { top: { color: '#A47551', finish: 'wood' }, seat: { color: '#000000' } },
+  };
+
+  it('keeps only what applies to the type', () => {
+    const spec = specFromJson(good);
+    expect(spec).toMatchObject({ type: 'sideboard', w: 1.8, d: 0.42, h: 0.38, color: '#2f3133', finish: 'painted', sizeSource: 'listed' });
     expect(spec.style).toEqual({ legs: 'hairpin', doors: 3, drawers: 0, shelves: 'open', handles: 'none' });
     expect(spec.parts).toEqual({ top: { color: '#a47551', finish: 'wood' } });
+    expect(specFromJson({ ...good, parts: [{ part: 'legs', color: '#111111', finish: 'metal' }] }).parts).toEqual({ legs: { color: '#111111', finish: 'metal' } });
   });
 
   it('falls back safely on bad values', () => {
-    const spec = specFromReply({ type: 'spaceship', width_cm: -5, depth_cm: 'big', height_cm: 99999, color: 'red', finish: 'gold', style: { doors: 99 }, parts: 'x' });
-    expect(spec.type).toBe('box');
-    expect(spec.w).toBe(0.01);
-    expect(spec.d).toBe(0.6);
-    expect(spec.h).toBe(12);
-    expect(spec.color).toBe('#c4bdb3');
+    const spec = specFromJson({ type: 'spaceship', width_cm: -5, depth_cm: 'big', height_cm: 99999, color: 'red', finish: 'gold', style: { doors: 99 }, parts: 'x' });
+    expect(spec).toMatchObject({ type: 'box', w: 0.01, d: 0.6, h: 12, color: '#c4bdb3' });
     expect(spec.finish).toBeUndefined();
     expect(spec.style).toBeUndefined();
-    expect(() => specFromReply('nope')).toThrow();
+    expect(() => specFromJson([])).toThrow();
   });
 
-  it('sends links with web fetch, the default fallback and the schema', async () => {
-    const { client, calls } = fakeClient([reply(good)]);
-    await describeProduct(client, { url: 'https://www.ikea.com/x' });
-    const body = calls[0];
-    expect(body.model).toBe(MODEL);
-    expect(body.fallbacks).toBe('default');
-    expect(body.betas).toEqual(['server-side-fallback-2026-07-01']);
-    expect(body.tools).toEqual([expect.objectContaining({ type: 'web_fetch_20260209', name: 'web_fetch' })]);
-    expect(JSON.stringify(body.messages)).toContain('https://www.ikea.com/x');
-    expect((body.output_config as { format: { type: string } }).format.type).toBe('json_schema');
+  it('is recognised when pasted, also inside a code block', () => {
+    expect(parseProduct('```json\n' + JSON.stringify(good) + '\n```').type).toBe('sideboard');
+    expect(() => parseProduct('{"name": "half')).toThrow(/incomplete/);
   });
 
-  it('sends pictures without tools', async () => {
-    const { client, calls } = fakeClient([reply(good)]);
-    await describeProduct(client, { image: { data: 'AAAA', mediaType: 'image/jpeg' } });
-    expect(calls[0].tools).toBeUndefined();
-    expect(JSON.stringify(calls[0].messages)).toContain('"type":"image"');
-  });
-
-  it('continues a paused turn and reports refusals', async () => {
-    const paused = { content: [{ type: 'server_tool_use' }], stop_reason: 'pause_turn' };
-    const { client, calls } = fakeClient([paused, reply(good)]);
-    const spec = await describeProduct(client, { url: 'https://example.com/chair' });
-    expect(spec.type).toBe('sideboard');
-    expect(calls).toHaveLength(2);
-    expect((calls[1].messages as unknown[]).length).toBe(2);
-
-    const refused = fakeClient([{ content: [], stop_reason: 'refusal' }]);
-    await expect(describeProduct(refused.client, { url: 'https://example.com/chair' })).rejects.toThrow(/declined/);
-    await expect(describeProduct(refused.client, {})).rejects.toThrow(/link or add a picture/);
+  it('drops options when the type is changed', () => {
+    const spec = fitToType(specFromJson(good), 'tv');
+    expect(spec.style).toBeUndefined();
+    expect(spec.parts).toBeUndefined();
+    expect(spec.elevation).toBe(0.9);
   });
 });

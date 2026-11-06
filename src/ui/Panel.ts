@@ -487,8 +487,8 @@ export class Panel {
     const cats = [...new Set(CATALOG.map((c) => c.category))];
     const nodes: Node[] = [
       section('From a shop', [
-        h('p', { class: 'muted small' }, 'Paste a product link or a picture of a piece of furniture and Claude builds a matching one.'),
-        h('div', { class: 'btn-row' }, h('button', { class: 'btn btn-primary', type: 'button', onclick: () => void this.addFromProduct() }, icon('sparkle', 16), 'Add from photo or link…')),
+        h('p', { class: 'muted small' }, 'Paste the name and measurements from a product page (IKEA or any shop) and get a matching piece.'),
+        h('div', { class: 'btn-row' }, h('button', { class: 'btn btn-primary', type: 'button', onclick: () => void this.addFromProduct() }, icon('sparkle', 16), 'Add from product details…')),
       ]),
       h('p', { class: 'hint' }, icon('info', 14), ` Click to add to “${s.level.name}”. Items appear in the middle of the plan view.`),
     ];
