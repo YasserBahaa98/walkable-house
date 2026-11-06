@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest';
 import { Dwg_File_Type, LibreDwg } from '@mlightcad/libredwg-web';
 import { cleanText, flattenDatabase, type RawDatabase } from '../src/importer/cadParse';
 import type { CadDrawing, CadSegment } from '../src/importer/cadTypes';
-import { buildProject, closeGaps, extract, guessScale, guessWallLayers, mergeCollinear, pairWalls } from '../src/importer/extract';
+import { buildProject, closeGaps, extract, guessScale, guessWallLayers, lShapedStair, mergeCollinear, pairWalls } from '../src/importer/extract';
 import { parseDxf } from '../src/importer/dxf';
 import { roomRegions } from '../src/geometry/rooms';
 
@@ -92,6 +92,40 @@ describe('gap closing', () => {
     expect(openings).toHaveLength(1);
     expect(openings[0]).toMatchObject({ kind: 'opening', wallId: 'p' });
     expect(openings[0].width).toBeCloseTo(0.9);
+  });
+});
+
+describe('L-shaped stair detection', () => {
+  const line = (x1: number, z1: number, x2: number, z2: number) => {
+    const a = { x: x1, z: z1 }, b = { x: x2, z: z2 };
+    const len = Math.hypot(x2 - x1, z2 - z1);
+    let ang = Math.atan2((z2 - z1) / len, (x2 - x1) / len);
+    if (ang < 0) ang += Math.PI;
+    if (ang >= Math.PI - 1e-9) ang -= Math.PI;
+    return { a, b, len, ux: (x2 - x1) / len, uz: (z2 - z1) / len, ang, layer: 'STAIR' };
+  };
+
+  it('finds both flights, the turn and the runs from tread lines', () => {
+    // Footprint 2 × 3.6 m centred at the origin. Flight 1: x ∈ [-1, 0], treads every 0.27 m climbing north (−Z).
+    // Flight 2: along the top, z ∈ [-1.8, -0.8], treads vertical, climbing east (+X).
+    const lines = [
+      ...Array.from({ length: 10 }, (_, i) => line(-1, 1.8 - i * 0.27, 0, 1.8 - i * 0.27)),
+      ...Array.from({ length: 4 }, (_, i) => line(0.1 + i * 0.27, -1.8, 0.1 + i * 0.27, -0.8)),
+      line(-1, -1.8, 1, -1.8),   // outline edge (noise)
+      line(0, 1.8, 0, 0.1),      // walking line (noise)
+    ];
+    const s = lShapedStair({ x: 0, z: 0 }, { x: 1, z: 0 }, 1, 1.8, lines)!;
+    expect(s.shape).toBe('L');
+    expect(s.width).toBeCloseTo(1);
+    expect(s.length).toBeCloseTo(2.6);
+    expect(s.length2).toBeCloseTo(1);
+    expect(s.turn).toBe('right');            // walking north, the second flight goes east
+    expect(Math.abs(s.rot)).toBeCloseTo(Math.PI); // climbs towards −Z
+  });
+
+  it('returns null for straight stairs', () => {
+    const lines = Array.from({ length: 10 }, (_, i) => line(-0.5, 1.5 - i * 0.3, 0.5, 1.5 - i * 0.3));
+    expect(lShapedStair({ x: 0, z: 0 }, { x: 1, z: 0 }, 0.5, 1.6, lines)).toBeNull();
   });
 });
 
