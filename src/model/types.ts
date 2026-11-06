@@ -80,6 +80,17 @@ export interface Stair {
   length2?: number;
 }
 
+export interface Roof {
+  type: 'flat' | 'gable' | 'hip';
+  /** Slope in degrees (ignored for flat roofs). */
+  pitch: number;
+  /** How far the roof extends past the walls. */
+  overhang: number;
+  /** Ridge direction: along the longer side, or along plan X / Y. */
+  ridge: 'auto' | 'x' | 'z';
+  material: 'clay' | 'slate' | 'metal';
+}
+
 export interface Level {
   id: string;
   name: string;
@@ -93,6 +104,8 @@ export interface Level {
   items: Item[];
   /** Stairs that start on this level and climb to the next one. */
   stairs: Stair[];
+  /** Roof on top of this level's walls (usually only the top level has one). */
+  roof?: Roof;
 }
 
 export interface CadUnderlay {
@@ -147,6 +160,7 @@ export interface ViewSettings {
   snap: boolean;
   units: Units;
   ghostLevel: boolean;    // show the level below in the plan
+  showRoof: boolean;      // roofs of the active level in orbit view
 }
 
 export type SelectionKind = 'wall' | 'opening' | 'room' | 'item' | 'stair';

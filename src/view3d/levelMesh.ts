@@ -5,6 +5,7 @@ import { roomRegions, type Rect } from '../geometry/rooms';
 import { stairSections } from '../geometry/stairs';
 import { endExtensions, openingSpans, wallPieces } from '../geometry/walls';
 import { buildFurniture } from './furniture';
+import { buildRoof } from './roofMesh';
 import { floorMaterial, glassMaterial, solid, wallMaterial, worldUV } from './materials';
 
 export interface Pickable { kind: 'wall' | 'opening' | 'room' | 'item' | 'stair'; id: string; levelId: string }
@@ -16,6 +17,8 @@ export interface LevelBuildOptions {
   cutaway: number | null;
   doorsOpen: number;
   ceiling: boolean;
+  /** Show this level's roof (if it has one). */
+  roof: boolean;
   /** Stairwell holes cut into this level's slab (stairs from the level below). */
   holes: Obb[];
   /** Resolve an imported model for "model" items (null while loading/missing). */
@@ -76,6 +79,11 @@ export function buildLevel(level: Level, opt: LevelBuildOptions): THREE.Group {
       ceil.receiveShadow = true;
       root.add(ceil);
     }
+  }
+
+  if (opt.roof) {
+    const roof = buildRoof(level, opt.wallHeight);
+    if (roof) root.add(roof);
   }
 
   const stairs = new THREE.Group();

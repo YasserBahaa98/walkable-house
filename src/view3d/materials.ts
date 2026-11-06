@@ -214,3 +214,75 @@ export function worldUV(geo: THREE.BufferGeometry, ox = 0, oz = 0) {
   }
   geo.setAttribute('uv', new THREE.BufferAttribute(uv, 2));
 }
+
+const ROOFS: Record<'clay' | 'slate' | 'metal', { paint: Painter; size: number; roughness: number; metalness: number }> = {
+  clay: {
+    size: 1.2, roughness: 0.75, metalness: 0,
+    paint: (ctx, n) => {
+      const r = rng(31);
+      const rows = 6, h = n / rows, cols = 5, w = n / cols;
+      for (let row = 0; row < rows; row++) {
+        for (let c = -1; c <= cols; c++) {
+          const t = (r() - 0.5) * 30;
+          ctx.fillStyle = `rgb(${172 + t},${86 + t * 0.6},${58 + t * 0.4})`;
+          const x = c * w + (row % 2 ? w / 2 : 0);
+          ctx.fillRect(x + 1, row * h, w - 2, h);
+          const g = ctx.createLinearGradient(0, row * h, 0, row * h + h);
+          g.addColorStop(0, 'rgba(0,0,0,0)');
+          g.addColorStop(1, 'rgba(0,0,0,0.28)');
+          ctx.fillStyle = g;
+          ctx.fillRect(x + 1, row * h, w - 2, h);
+        }
+      }
+      noise(ctx, n, 12, 32);
+    },
+  },
+  slate: {
+    size: 1.0, roughness: 0.6, metalness: 0.05,
+    paint: (ctx, n) => {
+      const r = rng(41);
+      const rows = 8, h = n / rows, cols = 6, w = n / cols;
+      ctx.fillStyle = '#2a2d31';
+      ctx.fillRect(0, 0, n, n);
+      for (let row = 0; row < rows; row++) {
+        for (let c = -1; c <= cols; c++) {
+          const t = (r() - 0.5) * 18;
+          ctx.fillStyle = `rgb(${68 + t},${73 + t},${80 + t})`;
+          const x = c * w + (row % 2 ? w / 2 : 0);
+          ctx.fillRect(x + 1.5, row * h + 1.5, w - 3, h - 2);
+        }
+      }
+      noise(ctx, n, 10, 42);
+    },
+  },
+  metal: {
+    size: 1.0, roughness: 0.35, metalness: 0.55,
+    paint: (ctx, n) => {
+      ctx.fillStyle = '#5d646b';
+      ctx.fillRect(0, 0, n, n);
+      const seams = 4;
+      for (let i = 0; i < seams; i++) {
+        const x = (i * n) / seams;
+        ctx.fillStyle = 'rgba(255,255,255,0.18)';
+        ctx.fillRect(x, 0, 3, n);
+        ctx.fillStyle = 'rgba(0,0,0,0.25)';
+        ctx.fillRect(x + 3, 0, 2, n);
+      }
+      noise(ctx, n, 6, 52);
+    },
+  },
+};
+
+const roofCache = new Map<string, THREE.MeshStandardMaterial>();
+/** Roof covering; UVs are in metres (u along the eaves, v up the slope). */
+export function roofMaterial(kind: 'clay' | 'slate' | 'metal'): THREE.MeshStandardMaterial {
+  let m = roofCache.get(kind);
+  if (!m) {
+    const p = ROOFS[kind];
+    const map = canvasTexture(p.paint);
+    map.repeat.set(1 / p.size, 1 / p.size);
+    m = new THREE.MeshStandardMaterial({ map, roughness: p.roughness, metalness: p.metalness, side: THREE.DoubleSide });
+    roofCache.set(kind, m);
+  }
+  return m;
+}

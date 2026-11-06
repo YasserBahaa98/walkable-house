@@ -219,6 +219,8 @@ export class View3D {
         cutaway: !walking && view.cutaway && isActive ? 1.1 : null,
         doorsOpen: view.doorsOpen,
         ceiling: walking && !above,
+        // Roofs: always when walking; in orbit for levels below the active one, and on demand for the active level.
+        roof: walking || level.elevation < activeElev - 1e-6 || (isActive && view.showRoof && !view.cutaway),
         holes: below ? below.stairs.flatMap(stairFootprint) : [],
         model: (id: string) => this.models.get(id),
         shadows: view.quality === 'high',
@@ -231,7 +233,7 @@ export class View3D {
         this.house.add(lv.group);
       }
       const key = JSON.stringify([level.elevation, level.height, level.walls, level.openings, level.rooms, level.stairs, opts.wallHeight,
-        opts.cutaway, opts.doorsOpen, opts.ceiling, below?.stairs, opts.shadows]);
+        opts.cutaway, opts.doorsOpen, opts.ceiling, opts.roof, level.roof, below?.stairs, opts.shadows]);
       if (key !== lv.staticKey) {
         if (lv.staticGroup) { disposeGroup(lv.staticGroup); lv.staticGroup.removeFromParent(); }
         lv.staticGroup = buildLevel(level, opts);

@@ -8,7 +8,7 @@ type Listener = (kinds: Set<ChangeKind>) => void;
 
 export const DEFAULT_VIEW: ViewSettings = {
   mode: 'orbit', night: false, sun: 135, quality: 'high', cutaway: false, doorsOpen: 0.85,
-  eye: 1.62, showUnderlay: true, underlayOpacity: 0.55, showGrid: true, snap: true, units: 'm', ghostLevel: true,
+  eye: 1.62, showUnderlay: true, underlayOpacity: 0.55, showGrid: true, snap: true, units: 'm', ghostLevel: true, showRoof: false,
 };
 
 const HISTORY_LIMIT = 150;

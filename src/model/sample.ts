@@ -103,6 +103,7 @@ export function sampleProject(): Project {
       item('Plant', 8.6, 6.6),
     ],
     stairs: [],
+    roof: { type: 'hip', pitch: 28, overhang: 0.45, ridge: 'auto', material: 'slate' },
   };
 
   return {

@@ -1,5 +1,5 @@
 import { uid } from './ids';
-import type { FloorMaterial, FurnitureType, Item, Level, Opening, Project, Room, Stair, Underlay, Vec2, Wall } from './types';
+import type { FloorMaterial, FurnitureType, Item, Level, Opening, Project, Roof, Room, Stair, Underlay, Vec2, Wall } from './types';
 
 /**
  * Parse untrusted JSON (imported files, persisted data) into a well-formed Project.
@@ -63,6 +63,17 @@ function parseLevel(l: Record<string, unknown>, index: number): Level {
     rooms: arr(l.rooms).map(parseRoom),
     items: arr(l.items).map(parseItem),
     stairs: arr(l.stairs).map(parseStair),
+    ...(isObj(l.roof) ? { roof: parseRoof(l.roof) } : {}),
+  };
+}
+
+function parseRoof(r: Record<string, unknown>): Roof {
+  return {
+    type: r.type === 'flat' || r.type === 'hip' ? r.type : 'gable',
+    pitch: num(r.pitch, 30, 5, 70),
+    overhang: num(r.overhang, 0.4, 0, 2),
+    ridge: r.ridge === 'x' || r.ridge === 'z' ? r.ridge : 'auto',
+    material: r.material === 'slate' || r.material === 'metal' ? r.material : 'clay',
   };
 }
 

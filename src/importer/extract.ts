@@ -834,6 +834,10 @@ export function buildProject(ex: Extraction, opts: BuildOptions): Project {
     }
   }
 
+  // A pitched roof on the top floor makes the walk-through look finished; editable afterwards.
+  const top = project.levels[project.levels.length - 1];
+  if (top?.walls.length) top.roof = { type: 'gable', pitch: 30, overhang: 0.4, ridge: 'auto', material: 'clay' };
+
   // Room seeds that land inside a wall or outside the plan: nudge, else drop duplicates.
   for (const level of project.levels) {
     const seen: { area: number; c: Vec2; room: Room }[] = [];

@@ -72,7 +72,7 @@ export class Panel {
     const s = this.store;
     const sel = s.selection;
     const key = [this.tab, s.activeLevelId, sel?.kind, sel?.id, s.view.units, s.project.levels.length,
-      this.tab === 'report' || this.tab === 'view' || !sel ? JSON.stringify([s.project.levels.map((l) => [l.name, l.elevation, l.rooms.length, l.walls.length, l.items.length, l.stairs.length]), s.project.layouts.map((l) => l.name), s.project.activeLayoutId, s.view, Object.keys(s.project.underlays)]) : '',
+      this.tab === 'report' || this.tab === 'view' || !sel ? JSON.stringify([s.project.levels.map((l) => [l.name, l.elevation, l.rooms.length, l.walls.length, l.items.length, l.stairs.length, l.roof?.type, l.roof?.ridge, l.roof?.material]), s.project.layouts.map((l) => l.name), s.project.activeLayoutId, s.view, Object.keys(s.project.underlays)]) : '',
       this.tab === 'report' ? JSON.stringify(s.project.levels.map((l) => [l.walls, l.openings, l.rooms, l.items])) : '',
       this.models.length,
     ].join('|');
@@ -133,6 +133,7 @@ export class Panel {
           h('button', { class: 'btn btn-danger-ghost', type: 'button', disabled: s.project.levels.length < 2, onclick: () => this.deleteLevel() }, icon('trash', 16), 'Delete'),
         ),
       ]),
+      this.roofSection(level),
       section('Reference drawing', ul ? [
         h('p', { class: 'muted small' }, ul.kind === 'cad' ? `CAD linework (${(ul.segments.length / 4).toLocaleString()} lines)` : 'Image underlay'),
         this.toggle('Show on plan', () => s.view.showUnderlay, (v) => s.setView({ showUnderlay: v })),
@@ -142,6 +143,32 @@ export class Panel {
           h('button', { class: 'btn btn-danger-ghost', type: 'button', onclick: () => s.mutate((p) => { delete p.underlays[level.id]; }) }, icon('trash', 16), 'Remove')),
       ] : [h('p', { class: 'muted small' }, 'Import an image or CAD file to trace over it. Use Import in the top bar.')]),
     ];
+  }
+
+  private roofSection(level: Level): HTMLElement {
+    const s = this.store;
+    const roof = level.roof;
+    const edit = (fn: (r: NonNullable<Level['roof']>) => void, key: string) => s.mutate((_p, l) => { if (l.roof) fn(l.roof); }, key);
+    const type = segmented([{ id: 'none', label: 'None' }, { id: 'flat', label: 'Flat' }, { id: 'gable', label: 'Gable' }, { id: 'hip', label: 'Hip' }],
+      roof?.type ?? 'none', (v) => s.mutate((_p, l) => {
+        if (v === 'none') delete l.roof;
+        else l.roof = { pitch: 30, overhang: 0.4, ridge: 'auto', material: 'clay', ...l.roof, type: v as 'flat' | 'gable' | 'hip' };
+      }, uid()));
+    const nodes: Node[] = [type];
+    if (roof) {
+      if (roof.type !== 'flat') {
+        nodes.push(this.slider('Pitch', 5, 60, 1, () => level.roof?.pitch ?? 30, (v) => edit((r) => { r.pitch = v; }, `roof-p-${level.id}`), (v) => `${Math.round(v)}°`));
+        nodes.push(h('div', { class: 'field' }, h('span', { class: 'field-label' }, 'Ridge'),
+          segmented([{ id: 'auto', label: 'Long side' }, { id: 'x', label: 'Along X' }, { id: 'z', label: 'Along Y' }], roof.ridge,
+            (v) => edit((r) => { r.ridge = v as 'auto' | 'x' | 'z'; }, uid()))));
+      }
+      nodes.push(this.lengthField('Overhang', () => level.roof?.overhang ?? 0.4, (v) => edit((r) => { r.overhang = v; }, `roof-o-${level.id}`), 0, 2));
+      nodes.push(h('div', { class: 'field' }, h('span', { class: 'field-label' }, 'Covering'),
+        segmented([{ id: 'clay', label: 'Clay tiles' }, { id: 'slate', label: 'Slate' }, { id: 'metal', label: 'Metal' }], roof.material,
+          (v) => edit((r) => { r.material = v as 'clay' | 'slate' | 'metal'; }, uid()))));
+      nodes.push(h('p', { class: 'muted small' }, 'Visible when walking. In the orbit view, toggle it with the roof button or T.'));
+    }
+    return section('Roof', nodes);
   }
 
   private wallSection(w: Wall): Node[] {
@@ -390,6 +417,7 @@ export class Panel {
       section('3D view', [
         this.slider('Doors open', 0, 1, 0.05, () => v.doorsOpen, (x) => s.setView({ doorsOpen: x }), (x) => `${Math.round(x * 100)}%`),
         this.toggle('Cutaway walls (orbit view)', () => v.cutaway, (x) => s.setView({ cutaway: x })),
+        this.toggle('Show roof of the active level', () => v.showRoof, (x) => s.setView({ showRoof: x })),
         this.slider('Eye height (walk)', 0.9, 2.0, 0.01, () => v.eye, (x) => s.setView({ eye: x }), (x) => formatLength(x, v.units)),
         h('div', { class: 'field' }, h('span', { class: 'field-label' }, 'Quality'),
           segmented([{ id: 'high', label: 'High' }, { id: 'low', label: 'Fast' }], v.quality, (id) => s.setView({ quality: id as 'high' | 'low' }))),

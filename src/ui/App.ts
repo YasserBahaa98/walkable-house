@@ -104,10 +104,11 @@ export class App {
       h('button', { type: 'button', role: 'radio', 'data-mode': 'orbit', onclick: () => s.setView({ mode: 'orbit' }) }, icon('orbit', 16), 'Orbit'),
       h('button', { type: 'button', role: 'radio', 'data-mode': 'walk', onclick: () => this.walk() }, icon('walk', 16), 'Walk'));
     this.els.night = iconButton('moon', 'Toggle day / evening', () => s.setView({ night: !s.view.night }), 'L');
+    this.els.roof = iconButton('house', 'Show roof', () => s.setView({ showRoof: !s.view.showRoof }), 'T', { 'aria-pressed': 'false' });
     const viewHost = h('div', { class: 'view-host' });
     const viewPane = h('section', { class: 'pane view-pane', 'aria-label': '3D view' },
       h('div', { class: 'pane-head' }, this.els.modeSeg, h('div', { class: 'spacer' }),
-        this.els.night,
+        this.els.roof, this.els.night,
         iconButton('frame', 'Frame the house', () => { s.setView({ mode: 'orbit' }); this.view3d?.frame(); }),
         iconButton('camera', 'Save screenshot', () => this.screenshot())),
       viewHost);
@@ -221,6 +222,8 @@ export class App {
       b.setAttribute('aria-checked', String(on));
     });
     this.els.night.replaceChildren(icon(s.view.night ? 'sun' : 'moon'));
+    this.els.roof.setAttribute('aria-pressed', String(s.view.showRoof));
+    this.els.roof.classList.toggle('on', s.view.showRoof);
 
     // Level tabs, top level first like a building section.
     this.els.levels.replaceChildren(...[...s.sortedLevels()].reverse().map((l) => h('button', {
@@ -307,6 +310,7 @@ export class App {
       if (tool && !walking) { s.setTool(tool.id); return; }
       if (e.key.toLowerCase() === 'f') { this.plan.fit(); this.view3d?.frame(); return; }
       if (e.key.toLowerCase() === 'l') { s.setView({ night: !s.view.night }); return; }
+      if (e.key.toLowerCase() === 't') { s.setView({ showRoof: !s.view.showRoof }); return; }
       if (e.key === '+' || e.key === '=') { this.plan.zoomBy(1.25); return; }
       if (e.key === '-') { this.plan.zoomBy(0.8); return; }
       const sel = s.selection;
@@ -558,6 +562,7 @@ export class App {
       ['W A S D, Shift', 'Walk, run (after clicking the 3D view)'],
       ['PageUp / PageDown', 'Switch level'],
       ['L', 'Toggle day / evening'],
+      ['T', 'Show / hide the roof in orbit view'],
       ['Ctrl+S / Ctrl+O', 'Save project file / open file'],
     ];
     const body = h('div', { class: 'help' },
