@@ -1,3 +1,4 @@
+import { resolveStyle } from '../model/styles';
 import type { ChangeKind, Store } from '../model/store';
 import type { Item, Level, Opening, Selection, Stair, Vec2, Wall } from '../model/types';
 import { formatArea, formatLength } from '../model/units';
@@ -1039,11 +1040,14 @@ export class PlanView {
     ctx.fillStyle = fill;
     ctx.strokeStyle = selected ? th.accent : hovered ? mix(th.wall, th.accent, 0.5) : withAlpha(th.wall, 0.75);
     ctx.lineWidth = (selected ? 2.5 : 1) * px;
-    roundRect(ctx, -it.w / 2, -it.d / 2, it.w, it.d, Math.min(0.05, it.w / 4, it.d / 4));
+    if ((it.type === 'table' || it.type === 'stool' || it.type === 'ottoman') && resolveStyle(it).top === 'round') {
+      ctx.beginPath();
+      ctx.ellipse(0, 0, it.w / 2, it.d / 2, 0, 0, Math.PI * 2);
+    } else roundRect(ctx, -it.w / 2, -it.d / 2, it.w, it.d, Math.min(0.05, it.w / 4, it.d / 4));
     ctx.fill();
     ctx.stroke();
     // Front edge marker (local +Z).
-    if (it.type !== 'rug' && it.type !== 'plant' && it.type !== 'lamp' && it.type !== 'vase') {
+    if (!['rug', 'plant', 'lamp', 'vase', 'stool', 'ottoman', 'table'].includes(it.type)) {
       ctx.strokeStyle = withAlpha(th.wall, 0.45);
       ctx.lineWidth = 2 * px;
       ctx.beginPath();

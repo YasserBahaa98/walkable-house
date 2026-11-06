@@ -1,3 +1,4 @@
+import type { Finish, ItemStyle, PartName, PartStyle } from './styles';
 // Domain model. Everything is in metres; the plan's X axis maps to world X and
 // the plan's Y axis maps to world Z (Three.js is Y-up).
 
@@ -46,6 +47,7 @@ export type FurnitureType =
   | 'bed' | 'sofa' | 'armchair' | 'table' | 'chair' | 'desk' | 'wardrobe' | 'bookshelf'
   | 'counter' | 'fridge' | 'tv' | 'rug' | 'plant' | 'lamp' | 'toilet' | 'bathtub' | 'sink'
   | 'art' | 'mirror' | 'curtain' | 'nightstand' | 'vase'
+  | 'sideboard' | 'stool' | 'ottoman' | 'bunkbed' | 'dresser' | 'shelving'
   | 'box' | 'model';
 
 export interface Item {
@@ -64,6 +66,12 @@ export interface Item {
   elevation?: number;
   /** For type "model": id of an imported glTF in the asset store. */
   modelId?: string;
+  /** Shape options (arms, legs, doors…); unset fields use the type's defaults. */
+  style?: ItemStyle;
+  /** Main material; unset picks wood or paint from the colour (fabric for upholstery). */
+  finish?: Finish;
+  /** Colour/material overrides for individual parts, e.g. oak legs on a grey fabric chair. */
+  parts?: Partial<Record<PartName, PartStyle>>;
 }
 
 export interface Stair {
