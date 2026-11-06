@@ -72,7 +72,7 @@ button, input, select { font: inherit; color: inherit; }
 :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 [hidden] { display: none !important; }
 
-#app { height: 100%; display: flex; flex-direction: column; }
+#app { height: 100%; height: 100dvh; display: flex; flex-direction: column; }
 
 .boot { position: fixed; inset: 0; display: grid; place-content: center; justify-items: center; gap: 12px; color: var(--muted); background: var(--bg); }
 
@@ -405,4 +405,21 @@ kbd { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 11
   .import-grid { grid-template-columns: 1fr; }
   .welcome-options { grid-template-columns: 1fr; }
   .statusbar { display: none; }
+}
+
+@media (max-width: 900px) {
+  .toasts { bottom: calc(72px + env(safe-area-inset-bottom)); }
+}
+
+/* --------------------------------------------------------- small phone */
+@media (max-width: 480px) {
+  .topbar { gap: 2px; padding: 0 6px; }
+  .brand { margin-right: 2px; }
+  .save-status { display: none; }
+  .project-name { width: auto; flex: 1; min-width: 60px; padding: 6px 4px; }
+  .topbar .icon-btn { width: 32px; }
+  .topbar .btn-ghost { padding: 0 8px; }
+  .pane-head { gap: 2px; padding: 0 4px; }
+  .pane-head .icon-btn { width: 32px; }
+  .segmented button { padding: 4px 8px; }
 }
