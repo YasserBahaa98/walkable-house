@@ -56,31 +56,52 @@ export function guessWallLayers(d: CadDrawing, scale = 1): string[] {
   return d.layers.slice(0, 1).map((l) => l.name);
 }
 
-/** Pick the unit scale that makes the drawing a plausible building size. */
+/**
+ * Pick the drawing unit. Walls are the strongest cue: double wall lines only
+ * pair into plausible walls (7–60 cm thick) at the right scale. The declared
+ * unit wins when it does nearly as well; drawing size is the fallback.
+ */
 export function guessScale(d: CadDrawing, wallLayers: string[]): number {
   const layers = new Set(wallLayers);
-  const xs: number[] = [], ys: number[] = [];
-  for (const s of d.segments) {
-    if (!layers.has(s.layer)) continue;
-    xs.push(s.x1, s.x2); ys.push(s.y1, s.y2);
+  // Prefer loose linework: blocks on wall layers are often appliances placed far away.
+  const onLayer = d.segments.filter((s) => layers.has(s.layer));
+  const loose = onLayer.filter((s) => !s.b);
+  const pick = (loose.length >= 20 ? loose : onLayer)
+    .map((s) => ({ s, len: Math.hypot(s.x2 - s.x1, s.y2 - s.y1) }))
+    .sort((a, b) => b.len - a.len)
+    .slice(0, 3000)
+    .map((x) => x.s);
+  if (!pick.length) return 1;
+  const declared = UNIT_SCALES.find((u) => u.insunits === d.insunits);
+
+  const scores = UNIT_SCALES.map((u) => {
+    const lines = pick.map((s) => toPlan(s, u.scale)).filter((l) => l.len > 0.05 && l.len < 200);
+    const paired = pairWalls(lines, { minThickness: 0.07, maxThickness: 0.6 }).reduce((sum, w) => sum + dist(w.a, w.b), 0);
+    return { u, paired };
+  });
+  const best = scores.reduce((a, b) => (b.paired > a.paired ? b : a));
+  if (best.paired > 2) {
+    const dec = declared && scores.find((x) => x.u === declared);
+    if (dec && dec.paired >= best.paired * 0.7) return dec.u.scale;
+    return best.u.scale;
   }
-  if (!xs.length) return 1;
-  // Robust extent (ignore stray outliers): 5th–95th percentile.
+
+  // No wall pairs at any scale (single-line drawing): fall back to overall size.
+  const xs: number[] = [], ys: number[] = [];
+  for (const s of pick) { xs.push(s.x1, s.x2); ys.push(s.y1, s.y2); }
   const extent = (v: number[]) => {
     v.sort((a, b) => a - b);
-    return v[Math.floor(v.length * 0.95)] - v[Math.floor(v.length * 0.05)];
+    return (v[Math.floor(v.length * 0.9)] - v[Math.floor(v.length * 0.1)]) * 1.25;
   };
   const size = Math.max(extent(xs), extent(ys));
-  const declared = UNIT_SCALES.find((u) => u.insunits === d.insunits);
   const plausible = (scale: number) => size * scale >= 3 && size * scale <= 300;
   if (declared && plausible(declared.scale)) return declared.scale;
-  let best = 1, bestScore = Infinity;
+  let fallback = 1, bestScore = Infinity;
   for (const u of UNIT_SCALES) {
-    const m = size * u.scale;
-    const score = Math.abs(Math.log(m / 12));
-    if (score < bestScore) { bestScore = score; best = u.scale; }
+    const score = Math.abs(Math.log((size * u.scale) / 15));
+    if (score < bestScore) { bestScore = score; fallback = u.scale; }
   }
-  return best;
+  return fallback;
 }
 
 // ---------------------------------------------------------------- results
@@ -195,6 +216,7 @@ export function extract(d: CadDrawing, opts: ExtractOptions): Extraction {
     const openings: Opening[] = merged.gaps.map((g) => classifyGap(g, doorHints, windowHints, doorArcs, otherLines));
     snapJoints(walls, openings);
     doorsAtWallEnds(walls, openings, doorArcs);
+    closeGaps(walls, openings, bounds);
     walls = walls.filter((w) => dist(w.a, w.b) >= 0.12);
     const wallIds = new Set(walls.map((w) => w.id));
 
@@ -577,6 +599,58 @@ export function doorsAtWallEnds(walls: Wall[], openings: Opening[], arcs: { p: V
     }
     const chosen = best as Fix | null;
     if (chosen) { chosen.apply(); recordDoorEnds(); }
+  }
+}
+
+/**
+ * Close short gaps left at free wall ends (often a wall drawn on another layer,
+ * or a doorway without a door symbol). A free end that points at another wall
+ * within 1.6 m is extended to it. On the building's outline the gap becomes
+ * solid wall; inside, gaps wide enough to walk through become passages.
+ */
+export function closeGaps(walls: Wall[], openings: Opening[], bounds: Bounds) {
+  const free = (w: Wall, p: Vec2) => !walls.some((o) => o !== w && pointSegment(p, o.a, o.b).d < o.thickness / 2 + 0.04);
+  const onOutline = (p: Vec2, q: Vec2) => {
+    const near = (v: number, edge: number) => Math.abs(v - edge) < 0.45;
+    return (near(p.x, bounds.minX) && near(q.x, bounds.minX)) || (near(p.x, bounds.maxX) && near(q.x, bounds.maxX))
+      || (near(p.z, bounds.minZ) && near(q.z, bounds.minZ)) || (near(p.z, bounds.maxZ) && near(q.z, bounds.maxZ));
+  };
+  for (const w of [...walls]) {
+    for (const end of ['a', 'b'] as const) {
+      const p = w[end];
+      if (!free(w, p)) continue;
+      const from = end === 'a' ? w.b : w.a;
+      const len0 = dist(from, p);
+      if (len0 < 0.3) continue;
+      const ux = (p.x - from.x) / len0, uz = (p.z - from.z) / len0;
+      let bestT = Infinity, face = 0;
+      for (const o of walls) {
+        if (o === w) continue;
+        const x = lineIntersection(from, p, o.a, o.b);
+        if (x) {
+          const t = (x.x - p.x) * ux + (x.z - p.z) * uz;
+          if (t > 0.02 && t < bestT && t <= 1.6 && pointSegment(x, o.a, o.b).d <= o.thickness / 2 + 0.05) { bestT = t; face = o.thickness / 2; }
+        } else {
+          for (const q of [o.a, o.b]) {
+            const t = (q.x - p.x) * ux + (q.z - p.z) * uz;
+            const off = Math.abs((q.x - p.x) * uz - (q.z - p.z) * ux);
+            if (off <= 0.06 && t > 0.02 && t < bestT && t <= 1.6) { bestT = t; face = 0; }
+          }
+        }
+      }
+      if (!Number.isFinite(bestT)) continue;
+      const gap = bestT - face;
+      const np = { x: round(p.x + ux * bestT), z: round(p.z + uz * bestT) };
+      const passage = gap >= 0.5 && !onOutline(p, np);
+      if (end === 'b') {
+        w.b = np;
+        if (passage) openings.push({ id: uid('o'), wallId: w.id, kind: 'opening', offset: len0 + gap / 2, width: gap, height: 2.1, sill: 0 });
+      } else {
+        for (const o of openings) if (o.wallId === w.id) o.offset += bestT;
+        w.a = np;
+        if (passage) openings.push({ id: uid('o'), wallId: w.id, kind: 'opening', offset: face + gap / 2, width: gap, height: 2.1, sill: 0 });
+      }
+    }
   }
 }
 

@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest';
 import { Dwg_File_Type, LibreDwg } from '@mlightcad/libredwg-web';
 import { cleanText, flattenDatabase, type RawDatabase } from '../src/importer/cadParse';
 import type { CadDrawing, CadSegment } from '../src/importer/cadTypes';
-import { buildProject, extract, guessScale, guessWallLayers, mergeCollinear, pairWalls } from '../src/importer/extract';
+import { buildProject, closeGaps, extract, guessScale, guessWallLayers, mergeCollinear, pairWalls } from '../src/importer/extract';
 import { parseDxf } from '../src/importer/dxf';
 import { roomRegions } from '../src/geometry/rooms';
 
@@ -64,6 +64,43 @@ describe('flattenDatabase', () => {
     expect(mirrored.x2).toBeCloseTo(2);
     expect(d.inserts.map((i) => i.name)).toEqual(['OUTER', 'UNIT', 'UNIT']);
     expect(d.insunits).toBe(4);
+  });
+});
+
+describe('gap closing', () => {
+  const wall = (id: string, x1: number, z1: number, x2: number, z2: number) => ({ id, a: { x: x1, z: z1 }, b: { x: x2, z: z2 }, thickness: 0.2 });
+  const bounds = { minX: -0.1, minZ: -0.1, maxX: 6.1, maxZ: 4.1 };
+
+  it('fills short gaps on the outline with solid wall', () => {
+    // Top wall stops 1 m short of the left wall.
+    const walls = [wall('l', 0, 0, 0, 4), wall('t', 6, 0, 1, 0), wall('r', 6, 0, 6, 4), wall('b', 0, 4, 6, 4)];
+    const openings: Parameters<typeof closeGaps>[1] = [];
+    closeGaps(walls, openings, bounds);
+    expect(walls[1].b.x).toBeCloseTo(0);
+    expect(openings).toHaveLength(0);
+  });
+
+  it('turns walkable interior gaps into passages', () => {
+    const walls = [wall('l', 0, 0, 0, 4), wall('r', 6, 0, 6, 4), wall('p', 3, 4, 3, 1)]; // partition stops 1 m short
+    const openings: Parameters<typeof closeGaps>[1] = [];
+    closeGaps(walls, openings, { minX: -0.1, minZ: -1, maxX: 6.1, maxZ: 4.1 });
+    // Nothing to hit going up (no top wall), so nothing changes.
+    expect(openings).toHaveLength(0);
+    walls.push(wall('t', 0, 0, 6, 0));
+    closeGaps(walls, openings, { minX: -0.1, minZ: -0.1, maxX: 6.1, maxZ: 4.1 });
+    expect(walls[2].b.z).toBeCloseTo(0);
+    expect(openings).toHaveLength(1);
+    expect(openings[0]).toMatchObject({ kind: 'opening', wallId: 'p' });
+    expect(openings[0].width).toBeCloseTo(0.9);
+  });
+});
+
+describe('scale detection', () => {
+  it('uses wall thickness to override a wrong declared unit', () => {
+    // A metre drawing (0.2 m walls) wrongly declared as inches, with appliance blocks far away.
+    const far = [seg(300, 300, 300.6, 300), seg(300, 300.6, 300.6, 300.6), seg(-200, -200, -199.4, -200)].map((x) => ({ ...x, b: 0.6 }));
+    const d = drawing([...roomSegments(0), ...roomSegments(12), ...far], { insunits: 1 });
+    expect(guessScale(d, ['WALL'])).toBe(1);
   });
 });
 

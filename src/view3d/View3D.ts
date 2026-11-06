@@ -359,7 +359,7 @@ export class View3D {
     this.hint.classList.toggle('top', coarse);
     this.hint.textContent = coarse
       ? 'Drag to look around · use the joystick to move'
-      : 'Click to look around · W A S D or arrows to move · Shift to run · Esc to release';
+      : 'Click to look around · W A S D to move · ← → to turn · Shift to run · gamepads work too · Esc to release';
   }
 
   private defaultSpawn(level: Level) {
@@ -563,10 +563,27 @@ export class View3D {
     if (!this.walker || !this.world) return;
     const k = this.keys;
     let fwd = (k.has('KeyW') || k.has('ArrowUp') ? 1 : 0) - (k.has('KeyS') || k.has('ArrowDown') ? 1 : 0);
-    let side = (k.has('KeyD') || k.has('ArrowRight') ? 1 : 0) - (k.has('KeyA') || k.has('ArrowLeft') ? 1 : 0);
+    let side = (k.has('KeyD') ? 1 : 0) - (k.has('KeyA') ? 1 : 0);
+    // Arrow keys turn, so walking works without a mouse.
+    let yaw = (k.has('ArrowLeft') ? 1 : 0) - (k.has('ArrowRight') ? 1 : 0);
+    let pitch = 0;
     fwd -= this.joystick.y;
     side += this.joystick.x;
-    const run = k.has('ShiftLeft') || k.has('ShiftRight');
+    let run = k.has('ShiftLeft') || k.has('ShiftRight');
+    const pad = readGamepad();
+    if (pad) {
+      fwd -= pad.ly; side += pad.lx;
+      yaw -= pad.rx; pitch -= pad.ry;
+      run ||= pad.run;
+    }
+    if (yaw || pitch) {
+      const euler = new THREE.Euler(0, 0, 0, 'YXZ').setFromQuaternion(this.camera.quaternion);
+      euler.y += yaw * 1.9 * dt;
+      euler.x = Math.max(-1.4, Math.min(1.4, euler.x + pitch * 1.5 * dt));
+      this.camera.quaternion.setFromEuler(euler);
+      this.dirty = true;
+      this.emitPose();
+    }
     const dir = new THREE.Vector3();
     this.camera.getWorldDirection(dir);
     dir.y = 0;
@@ -635,3 +652,16 @@ function disposeGroup(g: THREE.Object3D) {
     }
   });
 }
+
+/** First connected gamepad's sticks (with dead zone) and run button, if any. */
+function readGamepad(): { lx: number; ly: number; rx: number; ry: number; run: boolean } | null {
+  if (typeof navigator === 'undefined' || !navigator.getGamepads) return null;
+  const pad = [...navigator.getGamepads()].find((g) => g && g.connected && g.axes.length >= 2);
+  if (!pad) return null;
+  const dz = (v: number | undefined) => (v === undefined || Math.abs(v) < 0.15 ? 0 : (v - Math.sign(v) * 0.15) / 0.85);
+  const lx = dz(pad.axes[0]), ly = dz(pad.axes[1]), rx = dz(pad.axes[2]), ry = dz(pad.axes[3]);
+  const run = !!(pad.buttons[10]?.pressed || pad.buttons[5]?.pressed || pad.buttons[4]?.pressed);
+  if (!lx && !ly && !rx && !ry && !run) return null;
+  return { lx, ly, rx, ry, run };
+}
+

@@ -571,7 +571,7 @@ export class App {
       ['Space + drag, wheel', 'Pan and zoom the plan'],
       ['F', 'Fit plan and 3D view'],
       ['1 / 2', 'Orbit / walk camera'],
-      ['W A S D, Shift', 'Walk, run (after clicking the 3D view)'],
+      ['W A S D, ← →, Shift', 'Walk, turn, run (click the 3D view to look with the mouse; gamepads work too)'],
       ['PageUp / PageDown', 'Switch level'],
       ['L', 'Toggle day / evening'],
       ['T', 'Show / hide the roof in orbit view'],
