@@ -14,21 +14,22 @@ macOS, Linux, tablets and phones. Your work is saved locally; nothing is uploade
 
 **Import**
 - **DWG** (AutoCAD R13 and later; verified with AutoCAD 2018 files) via LibreDWG compiled to WebAssembly, and **DXF** via dxf-parser — parsed in a background worker.
-- Automatic detection of: drawing units, wall layers (by name, or geometrically by double-line pairs), separate floor plans drawn side by side, wall thickness, doors (swing arcs and door blocks), windows (glazing lines and thin window blocks), passages, wide glass façades, room names from text labels, furniture blocks, stairs (stair blocks or evenly spaced treads, with UP/DOWN labels), and floor-to-floor alignment.
+- Automatic detection of: drawing units (from wall thickness, so wrong unit headers don't matter), wall layers (by name, or geometrically by double-line pairs), separate floor plans drawn side by side, wall thickness, curved walls, doors (swing arcs and door blocks), windows (glazing lines and thin window blocks), passages, wide glass façades, short gaps left by walls drawn on other layers, room names from text labels, furniture blocks, straight and L-shaped stairs (stair blocks or evenly spaced treads, with UP/DOWN labels), and floor-to-floor alignment.
 - Import dialog with a live preview: change units, wall layers, which plan becomes which level, floor height, furniture and reference-drawing options and see the result immediately.
 - **Images** (PNG/JPG/WebP) as a scaled tracing underlay, with two-point calibration.
-- **Projects** (`.walkhouse.json`) and **3D models** (`.glb` / self-contained `.gltf`) for custom furniture, stored in the browser library.
+- **Projects** (`.walkhouse.json`) and **3D models** for custom furniture — `.glb`, a `.gltf` with its `.bin`/texture files, or a `.zip` — packed into the browser library.
 
 **Edit (2D plan)**
 - Tools: select/move, draw walls (chained, with angle/endpoint/wall/grid snapping and live length), doors, windows, room detection, stairs, measure, calibrate.
-- Drag wall ends (connected walls follow), drag whole walls, slide doors/windows along walls, rotate furniture with a handle, snap furniture flush against walls.
+- Drag wall ends (connected walls follow), drag whole walls, curve walls into arcs, slide doors/windows along walls, rotate furniture with a handle, snap furniture flush against walls.
+- Straight, L-shaped and U-shaped stairs with landings; flat, gable and hip roofs with pitch, overhang, ridge direction and covering.
 - Inspector for every object with free-form length input (`240cm`, `8' 6"`, `1200 mm`…), metric or imperial units.
 - Multiple levels, duplicate level, the level below shown as a ghost, reference drawing underlay with opacity.
 - Undo/redo for everything (drags count as one step), autosave to IndexedDB.
 
 **Experience (3D)**
 - Orbit view showing the active level and those below, optional cutaway walls.
-- First-person **walk mode** with collisions, doors you can walk through, and stairs between levels. Mouse + keyboard (pointer lock) or touch (drag to look, on-screen joystick).
+- First-person **walk mode** with collisions, doors you can walk through, and stairs (including landings) between levels. Mouse + keyboard (pointer lock), keyboard only (arrow keys turn), gamepad, or touch (drag to look, on-screen joystick).
 - Textured floors per room, hinged doors (single or double, adjustable opening), framed windows, slabs with stairwell holes, parametric furniture (beds, sofas, tables, kitchen, bath…), day/evening lighting with sun direction, shadows.
 
 **Check & share**
@@ -48,7 +49,29 @@ npm run dev
 
 Open the printed URL (default http://localhost:5173). The first run offers a demo house, an import, or an empty project.
 
-### Production build / install as an app
+### Hosted link (GitHub Pages)
+
+The repository includes `.github/workflows/deploy.yml`, which builds and publishes the app to GitHub Pages
+on every push to `main` — but only once Pages is enabled (until then it skips with a notice):
+
+1. GitHub Pages for a **private** repository needs a paid GitHub plan; on a free plan, make the repository
+   public (Settings → General → Danger zone → Change visibility) or use another static host (below).
+2. Settings → Pages → Build and deployment → **Source: GitHub Actions**.
+3. Re-run the "Deploy to GitHub Pages" workflow (Actions tab). The app is then live at
+   `https://<user>.github.io/walkable-house/`.
+
+Any static host works too: run `npm run build` and upload `dist/` (for example by dragging the folder onto
+Netlify Drop or Cloudflare Pages). HTTPS is required for installation and offline use.
+
+### Install it like an app
+
+- **Windows / macOS / Linux (Chrome or Edge):** open the link and click the install icon in the address bar
+  (or browser menu → *Install Walkable House*). It gets a Start-menu entry and its own window.
+- **iPhone / iPad (Safari):** open the link, tap *Share* → *Add to Home Screen*. It opens full-screen from the
+  home screen; walk with the on-screen joystick and drag to look around.
+- **Android (Chrome):** menu → *Install app*.
+
+### Production build
 
 ```bash
 npm run build
@@ -71,7 +94,9 @@ you import a DWG.
 | Stairs | `S`, click; stairs lead to the level above |
 | Measure | `M`, drag |
 | Move / rotate furniture | drag; rotate handle, `Q` / `E` (`Shift` = 90°), arrow keys to nudge |
-| Walk | **Walk** button, `2`, or double-click a room in the plan. Click the 3D view, then `W A S D`, `Shift` to run, `Esc` to release |
+| Walk | **Walk** button, `2`, or double-click a room in the plan. `W A S D` to move, `←` `→` to turn, `Shift` to run; click the 3D view to look with the mouse; gamepads work too; `Esc` to leave |
+| Roof | Level settings (Inspect tab, nothing selected); show it in orbit view with `T` |
+| Curve a wall | Select it → **Curve…** |
 | Switch level | level tabs, `PageUp` / `PageDown` |
 | Undo / redo | `Ctrl+Z` / `Ctrl+Shift+Z` |
 | Save a project file | **Export → Project file** or `Ctrl+S` |
@@ -122,11 +147,10 @@ they are derived from the walls, so editing walls updates room floors and areas 
 
 ## Known limitations
 
-- Plan recognition is heuristic. Clean architectural drawings (double-line walls on dedicated layers, door blocks or swing arcs, room labels) work best; anything missed can be fixed in the editor.
-- Stairs are modelled as straight flights; L- and U-shaped stairs import as their straight footprint.
-- Curved walls are imported as straight segments; walls are vertical extrusions (no sloped roofs yet).
-- Custom glTF models must be self-contained (`.glb` or `.gltf` with embedded data).
-- Pointer-lock walking needs a mouse; on touch devices use the joystick and drag to look.
+- Plan recognition is heuristic. Clean architectural drawings (double-line walls on dedicated layers, door blocks or swing arcs, room labels) work best; anything missed can be fixed in the editor, and the Report tab lists rooms that are not enclosed.
+- U-shaped stairs and winders are not detected automatically from drawings (straight and L-shaped are); set the shape in the stair inspector.
+- Roofs cover the bounding rectangle of a level's walls, so L-shaped footprints get one roof over the whole rectangle.
+- Curved walls are made of short straight segments (smooth at normal viewing distances).
 
 ## Tech
 
