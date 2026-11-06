@@ -199,6 +199,7 @@ button, input, select { font: inherit; color: inherit; }
   background: rgba(20, 18, 16, 0.78); color: #fff; padding: 8px 14px; border-radius: 999px; font-size: 12.5px;
   pointer-events: none; white-space: nowrap; max-width: calc(100% - 24px); overflow: hidden; text-overflow: ellipsis;
 }
+.walk-hint.top { top: 14px; bottom: auto; }
 .joystick {
   position: absolute; left: 24px; bottom: 24px; width: 110px; height: 110px; border-radius: 50%;
   background: rgba(255, 255, 255, 0.25); border: 2px solid rgba(255, 255, 255, 0.6); touch-action: none;

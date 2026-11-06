@@ -353,6 +353,7 @@ export class View3D {
     const walking = this.store.view.mode === 'walk';
     const coarse = matchMedia('(pointer: coarse)').matches;
     this.hint.hidden = !walking || this.look.isLocked;
+    this.hint.classList.toggle('top', coarse);
     this.hint.textContent = coarse
       ? 'Drag to look around · use the joystick to move'
       : 'Click to look around · W A S D or arrows to move · Shift to run · Esc to release';

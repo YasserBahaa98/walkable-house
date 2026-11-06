@@ -915,7 +915,7 @@ export class PlanView {
     ctx.save();
     ctx.translate(it.x, it.z);
     ctx.rotate(-it.rot);
-    const fill = it.type === 'rug' ? withAlpha(it.color, 0.35) : mix(it.color, '#ffffff', 0.55);
+    const fill = it.type === 'rug' ? withAlpha(it.color, 0.35) : mix(it.color, th.item, 0.6);
     ctx.fillStyle = fill;
     ctx.strokeStyle = selected ? th.accent : hovered ? mix(th.wall, th.accent, 0.5) : withAlpha(th.wall, 0.75);
     ctx.lineWidth = (selected ? 2.5 : 1) * px;
