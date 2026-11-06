@@ -8,7 +8,16 @@ export interface Obb { cx: number; cz: number; hx: number; hz: number; rot: numb
 
 export const clamp = (v: number, lo: number, hi: number) => (v < lo ? lo : v > hi ? hi : v);
 export const dist = (a: Vec2, b: Vec2) => Math.hypot(a.x - b.x, a.z - b.z);
-export const lerp = (a: number, b: number, t: number) => a + (b - a) * t;
+/** Round to millimetres (the precision stored in projects). */
+export const round3 = (v: number) => Math.round(v * 1000) / 1000;
+
+/** Normalise an angle to (−π, π], rounded to stored precision. */
+export function normAngle(a: number): number {
+  let r = a % (Math.PI * 2);
+  if (r > Math.PI) r -= Math.PI * 2;
+  if (r <= -Math.PI) r += Math.PI * 2;
+  return round3(r);
+}
 
 export function toLocal(o: Obb, x: number, z: number): [number, number] {
   const c = Math.cos(o.rot), s = Math.sin(o.rot);
@@ -78,7 +87,7 @@ export function pointSegment(p: Vec2, a: Vec2, b: Vec2): { d: number; t: number 
 }
 
 /** Three.js Y rotation that aligns local +X with the direction a→b. */
-export const segmentRot = (a: Vec2, b: Vec2) => -Math.atan2(b.z - a.z, b.x - a.x);
+const segmentRot = (a: Vec2, b: Vec2) => -Math.atan2(b.z - a.z, b.x - a.x);
 
 /** Box spanning segment ab with the given thickness, optionally extended at each end. */
 export function segmentObb(a: Vec2, b: Vec2, thickness: number, extA = 0, extB = 0): Obb {
