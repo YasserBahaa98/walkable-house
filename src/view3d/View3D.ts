@@ -2,6 +2,10 @@ import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { PointerLockControls } from 'three/addons/controls/PointerLockControls.js';
 import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
+import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
+import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
+import { GTAOPass } from 'three/addons/postprocessing/GTAOPass.js';
+import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
 import type { Level } from '../model/types';
 import type { ChangeKind, Store } from '../model/store';
 import { roomRegions } from '../geometry/rooms';
@@ -9,7 +13,7 @@ import { levelBounds } from '../geometry/walls';
 import { boundsValid } from '../geometry/math';
 import { buildItem, buildLevel, type Pickable } from './levelMesh';
 import { stairFootprint } from '../geometry/stairs';
-import { groundMaterial } from './materials';
+import { ceilingMaterial, groundMaterial, onTexturesChanged, setTextureQuality } from './materials';
 import { type PickBox, type PickRange, pickFromRanges } from './merge';
 
 const OUTLINE_MATERIAL = new THREE.LineBasicMaterial({ color: '#e8467c', depthTest: false, transparent: true });
@@ -50,6 +54,9 @@ export class View3D {
   private disposers: (() => void)[] = [];
   private hint: HTMLElement;
   private touchLook: { id: number; x: number; y: number } | null = null;
+  /** High quality only: render → ambient occlusion → tone mapping, with MSAA. */
+  private composer: EffectComposer | null = null;
+  private ao: GTAOPass | null = null;
   onPose: (p: Pose) => void = () => {};
   onLockChange: (locked: boolean) => void = () => {};
 
@@ -65,14 +72,19 @@ export class View3D {
     this.renderer.domElement.setAttribute('aria-label', '3D view of the house. Drag to orbit, scroll to zoom, double-click a floor to walk there.');
     host.appendChild(this.renderer.domElement);
 
-    this.camera = new THREE.PerspectiveCamera(55, 1, 0.05, 600);
+    // A 0.1 m near plane keeps depth precise enough for ambient occlusion.
+    this.camera = new THREE.PerspectiveCamera(55, 1, 0.1, 600);
     this.camera.position.set(14, 14, 18);
 
     const pmrem = new THREE.PMREMGenerator(this.renderer);
     this.scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
     pmrem.dispose();
 
-    this.ground = new THREE.Mesh(new THREE.CircleGeometry(150, 48), groundMaterial());
+    const groundGeo = new THREE.CircleGeometry(150, 48);
+    // UVs in metres so the grass texture keeps its real scale.
+    const gp = groundGeo.getAttribute('position'), gu = groundGeo.getAttribute('uv');
+    for (let i = 0; i < gp.count; i++) gu.setXY(i, gp.getX(i), gp.getY(i));
+    this.ground = new THREE.Mesh(groundGeo, groundMaterial());
     this.ground.rotation.x = -Math.PI / 2;
     this.ground.position.y = -0.21;
     this.ground.receiveShadow = true;
@@ -84,6 +96,9 @@ export class View3D {
     sun.shadow.mapSize.set(2048, 2048);
     sun.shadow.bias = -0.0004;
     sun.shadow.normalBias = 0.03;
+    // Soft shadow edges (PCF with a wider sampling disk).
+    sun.shadow.radius = 3;
+    onTexturesChanged(() => { this.dirty = true; });
 
     this.orbit = new OrbitControls(this.camera, this.renderer.domElement);
     this.orbit.enableDamping = true;
@@ -160,7 +175,7 @@ export class View3D {
   }
 
   screenshot(): string {
-    this.renderer.render(this.scene, this.camera);
+    this.draw();
     return this.renderer.domElement.toDataURL('image/png');
   }
 
@@ -183,6 +198,8 @@ export class View3D {
     this.renderer.setAnimationLoop(null);
     this.disposers.forEach((d) => d());
     this.resizeObs.disconnect();
+    this.composer?.dispose();
+    this.ao?.dispose();
     this.orbit.dispose();
     this.look.dispose();
     this.renderer.dispose();
@@ -192,8 +209,11 @@ export class View3D {
   private sync(kinds: Set<ChangeKind>) {
     const v = this.store.view;
     if (kinds.has('view') || kinds.has('project')) {
-      this.renderer.shadowMap.enabled = v.quality === 'high';
-      this.renderer.setPixelRatio(v.quality === 'high' ? Math.min(devicePixelRatio, 2) : 1);
+      const high = v.quality === 'high';
+      this.renderer.shadowMap.enabled = high;
+      this.renderer.setPixelRatio(high ? Math.min(devicePixelRatio, 2) : 1);
+      setTextureQuality(high ? '1k' : '512', this.renderer.capabilities.getMaxAnisotropy());
+      this.setPostProcessing(high);
     }
     if (kinds.has('project') || kinds.has('view') || kinds.has('level')) {
       this.rebuild();
@@ -299,8 +319,9 @@ export class View3D {
     this.scene.background = new THREE.Color(night ? '#0d1420' : '#cfe1ef');
     this.scene.environmentIntensity = night ? 0.06 : 0.45;
     hemi.color.set(night ? '#4a5a7a' : '#eef4ff');
-    hemi.groundColor.set(night ? '#1a1814' : '#b9a68c');
+    hemi.groundColor.set(night ? '#1a1814' : '#d9cebf');
     hemi.intensity = night ? 0.15 : 1.1;
+    ceilingMaterial.emissiveIntensity = night ? 0.02 : 0.3;
     sun.color.set(night ? '#9fb4ff' : '#fff4e2');
     sun.intensity = night ? 0.25 : 2.6;
     (this.ground.material as THREE.MeshStandardMaterial).color.set(night ? '#3a4636' : '#ffffff');
@@ -568,7 +589,45 @@ export class View3D {
     else if (this.orbit.update()) this.dirty = true;
     if (!this.dirty) return;
     this.dirty = false;
-    this.renderer.render(this.scene, this.camera);
+    this.draw();
+  }
+
+  private draw() {
+    if (this.composer) this.composer.render();
+    else this.renderer.render(this.scene, this.camera);
+  }
+
+  /**
+   * Ambient occlusion darkens corners, the floor under furniture and the
+   * creases between cushions, which grounds everything in the scene. It
+   * costs a normal/depth pass per frame, so it only runs at High quality.
+   */
+  private setPostProcessing(on: boolean) {
+    if (!on) {
+      this.composer?.dispose();
+      this.ao?.dispose();
+      this.composer = null;
+      this.ao = null;
+      return;
+    }
+    if (this.composer) return;
+    const size = this.renderer.getDrawingBufferSize(new THREE.Vector2());
+    const target = new THREE.WebGLRenderTarget(size.x, size.y, { type: THREE.HalfFloatType, samples: 4 });
+    const composer = new EffectComposer(this.renderer, target);
+    composer.addPass(new RenderPass(this.scene, this.camera));
+    const ao = new GTAOPass(this.scene, this.camera, size.x, size.y);
+    ao.updateGtaoMaterial({ radius: 0.5, distanceExponent: 1, thickness: 1, scale: 1.25, samples: 16, distanceFallOff: 1, screenSpaceRadius: false });
+    ao.updatePdMaterial({ lumaPhi: 10, depthPhi: 2, normalPhi: 3, radius: 5, radiusExponent: 1, rings: 2, samples: 12 });
+    // GTAO reads ~0.9 on open flat surfaces; remap so they stay unshaded and
+    // only corners, contacts and creases darken (avoids light halos).
+    ao.blendMaterial.fragmentShader = ao.blendMaterial.fragmentShader.replace(
+      'mix(vec3(1.), texel.rgb, intensity)', 'mix(vec3(1.), clamp(texel.rgb / 0.9, 0., 1.), intensity)');
+    ao.blendIntensity = 1;
+    composer.addPass(ao);
+    composer.addPass(new OutputPass());
+    this.composer = composer;
+    this.ao = ao;
+    this.resize();
   }
 
   private walkStep(dt: number) {
@@ -630,6 +689,10 @@ export class View3D {
   private resize() {
     const w = Math.max(1, this.host.clientWidth), h = Math.max(1, this.host.clientHeight);
     this.renderer.setSize(w, h, false);
+    if (this.composer) {
+      this.composer.setPixelRatio(this.renderer.getPixelRatio());
+      this.composer.setSize(w, h);
+    }
     this.camera.aspect = w / h;
     this.camera.updateProjectionMatrix();
     this.dirty = true;

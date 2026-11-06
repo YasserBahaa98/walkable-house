@@ -1,8 +1,10 @@
 import * as THREE from 'three';
 import type { FloorMaterial } from '../model/types';
 
-// Procedural textures keep the app fully offline and tiny. Each texture is
-// drawn once on a canvas and tiled in world space (1 texture repeat = `size` m).
+// Surfaces use photo-scanned PBR textures (public/textures, CC0) loaded on
+// demand. Until a texture has loaded (or when it can't be fetched offline) the
+// material keeps a small procedural stand-in drawn on a canvas, so nothing ever
+// renders black. All textures tile in world space: 1 repeat = `size` metres.
 
 type Painter = (ctx: CanvasRenderingContext2D, n: number) => void;
 
@@ -16,6 +18,129 @@ function canvasTexture(paint: Painter, n = 512, color = true): THREE.CanvasTextu
   tex.anisotropy = 8;
   if (color) tex.colorSpace = THREE.SRGBColorSpace;
   return tex;
+}
+
+// ------------------------------------------------------------ photo textures
+
+/** Texture resolution: 1k for the High quality setting, 512 for Fast. */
+export type TextureQuality = '1k' | '512';
+let quality: TextureQuality = '1k';
+let anisotropy = 8;
+let changed: () => void = () => {};
+
+/** Called whenever a texture finishes loading, so the view can redraw. */
+export function onTexturesChanged(cb: () => void) { changed = cb; }
+
+interface PbrSpec {
+  /** File prefix in public/textures/<quality>/. */
+  name: string;
+  /** Which maps exist: c(olour), n(ormal), r(oughness). */
+  maps: string;
+  /** Metres per texture repeat. */
+  size: number;
+  /** Use another material's normal map (e.g. rugs share the carpet's). */
+  normalFrom?: string;
+  normalScale?: number;
+}
+
+interface Slot { mat: THREE.MeshStandardMaterial; spec: PbrSpec; loaded: THREE.Texture[]; roughness: number }
+const slots: Slot[] = [];
+const loader = typeof document === 'undefined' ? null : new THREE.TextureLoader();
+
+function textureUrl(file: string) {
+  return `${import.meta.env.BASE_URL}textures/${quality}/${file}.webp`;
+}
+
+function loadInto(slot: Slot) {
+  if (!loader) return;
+  const { mat, spec } = slot;
+  const q = quality;
+  const want: [keyof THREE.MeshStandardMaterial & ('map' | 'normalMap' | 'roughnessMap'), string, boolean][] = [];
+  if (spec.maps.includes('c')) want.push(['map', `${spec.name}_col`, true]);
+  // Fast keeps shaders light: colour only, no normal or roughness maps.
+  if (q === '1k' && (spec.maps.includes('n') || spec.normalFrom)) want.push(['normalMap', `${spec.normalFrom ?? spec.name}_nor`, false]);
+  if (q === '1k' && spec.maps.includes('r')) want.push(['roughnessMap', `${spec.name}_rough`, false]);
+  for (const [key, file, srgb] of want) {
+    loader.load(textureUrl(file), (tex) => {
+      if (q !== quality) { tex.dispose(); return; }
+      tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
+      tex.repeat.set(1 / spec.size, 1 / spec.size);
+      tex.anisotropy = anisotropy;
+      if (srgb) tex.colorSpace = THREE.SRGBColorSpace;
+      const old = mat[key];
+      if (old && !(old instanceof THREE.CanvasTexture)) old.dispose();
+      mat[key] = tex;
+      if (key === 'normalMap') { mat.normalScale.setScalar(spec.normalScale ?? 1); mat.bumpMap = null; }
+      if (key === 'roughnessMap') mat.roughness = 1;
+      mat.needsUpdate = true;
+      slot.loaded.push(tex);
+      changed();
+    }, undefined, () => { /* offline or missing: keep the procedural stand-in */ });
+  }
+}
+
+/** Attach photo textures to a material; they replace its stand-in maps once loaded. */
+function pbr<T extends THREE.MeshStandardMaterial>(mat: T, spec: PbrSpec): T {
+  const slot: Slot = { mat, spec, loaded: [], roughness: mat.roughness };
+  slots.push(slot);
+  loadInto(slot);
+  return mat;
+}
+
+/** Switch texture resolution (and filtering) for every material, reloading maps. */
+export function setTextureQuality(q: TextureQuality, maxAnisotropy = 8) {
+  anisotropy = Math.min(maxAnisotropy, q === '1k' ? 8 : 4);
+  if (q === quality) return;
+  quality = q;
+  for (const s of slots) {
+    if (q === '512') {
+      // Drop the detail maps; the material's own roughness/bump stand in.
+      s.mat.normalMap?.dispose();
+      s.mat.roughnessMap?.dispose();
+      s.mat.normalMap = null;
+      s.mat.roughnessMap = null;
+      s.mat.roughness = s.roughness;
+      s.mat.needsUpdate = true;
+    }
+    s.loaded = [];
+    loadInto(s);
+  }
+  for (const [m, v] of physical) {
+    m.sheen = q === '1k' ? v.sheen : 0;
+    m.clearcoat = q === '1k' ? v.clearcoat : 0;
+  }
+}
+
+/** Physical materials and their effects; sheen and clearcoat are switched off on Fast. */
+const physical = new Map<THREE.MeshPhysicalMaterial, { sheen: number; clearcoat: number }>();
+function effects(m: THREE.MeshPhysicalMaterial): THREE.MeshPhysicalMaterial {
+  physical.set(m, { sheen: m.sheen, clearcoat: m.clearcoat });
+  if (quality !== '1k') { m.sheen = 0; m.clearcoat = 0; }
+  return m;
+}
+
+/** URL of a material's colour texture, for UI swatches. */
+export function textureSwatchUrl(name: string) {
+  return `${import.meta.env.BASE_URL}textures/512/${name}_col.webp`;
+}
+
+/**
+ * Box-projected UVs in metres: each face takes the two axes it spans, so a
+ * texture keeps its real-world scale on any box, whatever its size.
+ */
+export function boxUV(geo: THREE.BufferGeometry): THREE.BufferGeometry {
+  const pos = geo.getAttribute('position'), nor = geo.getAttribute('normal');
+  if (!nor) return geo;
+  const uv = new Float32Array(pos.count * 2);
+  for (let i = 0; i < pos.count; i++) {
+    const ax = Math.abs(nor.getX(i)), ay = Math.abs(nor.getY(i)), az = Math.abs(nor.getZ(i));
+    const x = pos.getX(i), y = pos.getY(i), z = pos.getZ(i);
+    if (ay >= ax && ay >= az) { uv[i * 2] = x; uv[i * 2 + 1] = z; }
+    else if (ax >= az) { uv[i * 2] = z; uv[i * 2 + 1] = y; }
+    else { uv[i * 2] = x; uv[i * 2 + 1] = y; }
+  }
+  geo.setAttribute('uv', new THREE.BufferAttribute(uv, 2));
+  return geo;
 }
 
 /** Deterministic pseudo-random generator so textures look the same every load. */
@@ -65,11 +190,11 @@ const planks = (base: [number, number, number], vary: number, seed: number): Pai
   noise(ctx, n, 10, seed + 1);
 };
 
-const PAINTERS: Record<FloorMaterial, { paint: Painter; size: number; roughness: number }> = {
-  oak: { paint: planks([196, 160, 118], 26, 7), size: 2.4, roughness: 0.62 },
-  walnut: { paint: planks([118, 82, 56], 22, 11), size: 2.4, roughness: 0.55 },
+const PAINTERS: Record<FloorMaterial, { paint: Painter; size: number; roughness: number; photo: number }> = {
+  oak: { paint: planks([196, 160, 118], 26, 7), size: 2.4, roughness: 0.62, photo: 1.7 },
+  walnut: { paint: planks([118, 82, 56], 22, 11), size: 2.4, roughness: 0.55, photo: 1.7 },
   tile: {
-    size: 1.2, roughness: 0.35,
+    size: 1.2, roughness: 0.35, photo: 1.2,
     paint: (ctx, n) => {
       ctx.fillStyle = '#d9d6d0';
       ctx.fillRect(0, 0, n, n);
@@ -84,7 +209,7 @@ const PAINTERS: Record<FloorMaterial, { paint: Painter; size: number; roughness:
     },
   },
   marble: {
-    size: 1.6, roughness: 0.18,
+    size: 1.6, roughness: 0.18, photo: 2.0,
     paint: (ctx, n) => {
       ctx.fillStyle = '#eeece8';
       ctx.fillRect(0, 0, n, n);
@@ -104,7 +229,7 @@ const PAINTERS: Record<FloorMaterial, { paint: Painter; size: number; roughness:
     },
   },
   carpet: {
-    size: 1.0, roughness: 0.95,
+    size: 1.0, roughness: 0.95, photo: 0.8,
     paint: (ctx, n) => {
       ctx.fillStyle = '#b9b0a4';
       ctx.fillRect(0, 0, n, n);
@@ -112,7 +237,7 @@ const PAINTERS: Record<FloorMaterial, { paint: Painter; size: number; roughness:
     },
   },
   concrete: {
-    size: 3.0, roughness: 0.85,
+    size: 3.0, roughness: 0.85, photo: 3.0,
     paint: (ctx, n) => {
       ctx.fillStyle = '#a9a8a4';
       ctx.fillRect(0, 0, n, n);
@@ -136,7 +261,8 @@ export function floorMaterial(kind: FloorMaterial): THREE.MeshStandardMaterial {
     const p = PAINTERS[kind];
     const map = canvasTexture(p.paint);
     map.repeat.set(1 / p.size, 1 / p.size);
-    m = new THREE.MeshStandardMaterial({ map, roughness: p.roughness, metalness: 0 });
+    m = pbr(new THREE.MeshStandardMaterial({ map, roughness: p.roughness, metalness: 0 }),
+      { name: `floor_${kind}`, maps: 'cnr', size: p.photo, normalScale: 0.8 });
     floorCache.set(kind, m);
   }
   return m;
@@ -168,7 +294,8 @@ export function wallMaterial(color = '#f2eee8'): THREE.MeshStandardMaterial {
   let m = wallCache.get(color);
   if (!m) {
     const bump = plasterTexture();
-    m = new THREE.MeshStandardMaterial({ color, roughness: 0.92, metalness: 0, bumpMap: bump, bumpScale: 0.4 });
+    m = pbr(new THREE.MeshStandardMaterial({ color, roughness: 0.92, metalness: 0, bumpMap: bump, bumpScale: 0.4 }),
+      { name: 'wall_plaster', maps: 'nr', size: 1.0, normalScale: 0.35 });
     wallCache.set(color, m);
   }
   return m;
@@ -183,7 +310,7 @@ export function groundMaterial(): THREE.MeshStandardMaterial {
       noise(ctx, n, 30, 77);
     }, 256);
     map.repeat.set(1 / 4, 1 / 4);
-    grass = new THREE.MeshStandardMaterial({ map, roughness: 1, metalness: 0 });
+    grass = pbr(new THREE.MeshStandardMaterial({ map, roughness: 1, metalness: 0 }), { name: 'ground_grass', maps: 'c', size: 2.5 });
   }
   return grass;
 }
@@ -215,9 +342,9 @@ export function worldUV(geo: THREE.BufferGeometry, ox = 0, oz = 0) {
   geo.setAttribute('uv', new THREE.BufferAttribute(uv, 2));
 }
 
-const ROOFS: Record<'clay' | 'slate' | 'metal', { paint: Painter; size: number; roughness: number; metalness: number }> = {
+const ROOFS: Record<'clay' | 'slate' | 'metal', { paint: Painter; size: number; roughness: number; metalness: number; photo: number }> = {
   clay: {
-    size: 1.2, roughness: 0.75, metalness: 0,
+    size: 1.2, roughness: 0.75, metalness: 0, photo: 2.5,
     paint: (ctx, n) => {
       const r = rng(31);
       const rows = 6, h = n / rows, cols = 5, w = n / cols;
@@ -238,7 +365,7 @@ const ROOFS: Record<'clay' | 'slate' | 'metal', { paint: Painter; size: number; 
     },
   },
   slate: {
-    size: 1.0, roughness: 0.6, metalness: 0.05,
+    size: 1.0, roughness: 0.6, metalness: 0.05, photo: 3.0,
     paint: (ctx, n) => {
       const r = rng(41);
       const rows = 8, h = n / rows, cols = 6, w = n / cols;
@@ -256,7 +383,7 @@ const ROOFS: Record<'clay' | 'slate' | 'metal', { paint: Painter; size: number; 
     },
   },
   metal: {
-    size: 1.0, roughness: 0.35, metalness: 0.55,
+    size: 1.0, roughness: 0.35, metalness: 0.55, photo: 1.12,
     paint: (ctx, n) => {
       ctx.fillStyle = '#5d646b';
       ctx.fillRect(0, 0, n, n);
@@ -281,8 +408,62 @@ export function roofMaterial(kind: 'clay' | 'slate' | 'metal'): THREE.MeshStanda
     const p = ROOFS[kind];
     const map = canvasTexture(p.paint);
     map.repeat.set(1 / p.size, 1 / p.size);
-    m = new THREE.MeshStandardMaterial({ map, roughness: p.roughness, metalness: p.metalness, side: THREE.DoubleSide });
+    m = pbr(new THREE.MeshStandardMaterial({ map, roughness: p.roughness, metalness: p.metalness, side: THREE.DoubleSide }),
+      { name: `roof_${kind}`, maps: 'cnr', size: p.photo });
     roofCache.set(kind, m);
   }
   return m;
 }
+
+
+// ------------------------------------------------------- furniture finishes
+// Detail textures are neutral grey, so the item's colour tints them.
+
+const finishCache = new Map<string, THREE.MeshStandardMaterial>();
+function cached<T extends THREE.MeshStandardMaterial>(key: string, make: () => T): T {
+  let m = finishCache.get(key);
+  if (!m) { m = make(); finishCache.set(key, m); }
+  return m as T;
+}
+
+/** Oiled wood with real grain, tinted by `color`. */
+export function woodMaterial(color: string): THREE.MeshStandardMaterial {
+  return cached(`wood|${color}`, () => pbr(new THREE.MeshStandardMaterial({ color, roughness: 0.6 }),
+    { name: 'wood', maps: 'cnr', size: 1.2, normalScale: 0.6 }));
+}
+
+/** Smooth painted or lacquered surface (white wardrobes, kitchen fronts). */
+export function paintedMaterial(color: string, roughness = 0.42): THREE.MeshPhysicalMaterial {
+  return cached(`paint|${color}|${roughness}`, () => effects(new THREE.MeshPhysicalMaterial({ color, roughness, clearcoat: 0.25, clearcoatRoughness: 0.5 })));
+}
+
+/** Woven upholstery with a soft sheen at grazing angles. */
+export function fabricMaterial(color: string): THREE.MeshPhysicalMaterial {
+  return cached(`fabric|${color}`, () => {
+    const sheen = new THREE.Color(color).lerp(new THREE.Color('#ffffff'), 0.35);
+    return pbr(effects(new THREE.MeshPhysicalMaterial({ color, roughness: 0.95, sheen: 0.6, sheenRoughness: 0.7, sheenColor: sheen })),
+      { name: 'fabric', maps: 'cnr', size: 0.5, normalScale: 0.8 });
+  });
+}
+
+/** Rugs and carpets: deep pile. */
+export function rugMaterial(color: string): THREE.MeshStandardMaterial {
+  return cached(`rug|${color}`, () => pbr(new THREE.MeshStandardMaterial({ color, roughness: 1 }),
+    { name: 'rug', maps: 'c', size: 0.6, normalFrom: 'floor_carpet' }));
+}
+
+/** Glazed ceramic or enamel (toilets, basins, baths). */
+export function ceramicMaterial(color: string): THREE.MeshPhysicalMaterial {
+  return cached(`ceramic|${color}`, () => effects(new THREE.MeshPhysicalMaterial({ color, roughness: 0.25, clearcoat: 1, clearcoatRoughness: 0.08 })));
+}
+
+/** Brushed or polished metal. */
+export function metalMaterial(color: string, roughness = 0.35): THREE.MeshStandardMaterial {
+  return cached(`metal|${color}|${roughness}`, () => new THREE.MeshStandardMaterial({ color, roughness, metalness: 1 }));
+}
+
+/**
+ * Ceilings only face the floor, so direct light never reaches them. A little
+ * emission stands in for light bounced off the floor and walls (daytime only).
+ */
+export const ceilingMaterial = new THREE.MeshStandardMaterial({ color: '#f5f3ef', roughness: 0.95, emissive: '#f5f3ef', emissiveIntensity: 0.3 });

@@ -35,7 +35,10 @@ macOS, Linux, tablets and phones. Your work is saved locally; nothing is uploade
 **Experience (3D)**
 - Orbit view showing the active level and those below, optional cutaway walls.
 - First-person **walk mode** with collisions, doors you can walk through, and stairs (including landings) between levels. Mouse + keyboard (pointer lock), keyboard only (arrow keys turn), gamepad, or touch (drag to look, on-screen joystick).
-- Textured floors per room, hinged doors (single or double, adjustable opening), framed windows, slabs with stairwell holes, parametric furniture (beds, sofas, tables, kitchen, bath…), day/evening lighting with sun direction, shadows.
+- Photo-scanned PBR materials: wood, tile, marble, carpet and concrete floors, plaster walls, clay/slate/metal roofs, grass, and furniture in real wood grain, woven fabric with sheen, glazed ceramic and metal, all tinted by each item's colour.
+- Ambient occlusion (soft shading in corners, under and between furniture), soft sun shadows and bounce light on ceilings.
+- Hinged doors (single or double, adjustable opening), framed windows, slabs with stairwell holes, parametric furniture (beds, sofas, tables, kitchen, bath…), day/evening lighting with sun direction.
+- **Quality**: *High* (1k textures, ambient occlusion, shadows, sharp on high-DPI screens) for computers, *Fast* (512 px textures, no AO or shadows) for phones and tablets, which start on Fast.
 
 **Check & share**
 - Report: room schedule with areas per level, totals, wall length, door/window/furniture counts, CSV export.
@@ -168,6 +171,9 @@ they are derived from the walls, so editing walls updates room floors and areas 
   with cached paths for reference drawings and room floors.
 - The CAD reader runs in a Web Worker and its 11 MB WebAssembly module loads only when a DWG is imported.
   three.js sits in its own chunk so app updates don't re-download it.
+- Textures load on demand (only the materials in view), at 512 px on Fast, and are cached for offline use. Until a
+  texture arrives, or offline before it was ever fetched, a small procedural stand-in is drawn instead.
+- Ambient occlusion adds a normal/depth pass, roughly doubling draw calls, so it only runs on High.
 
 ## Known limitations
 
@@ -175,6 +181,11 @@ they are derived from the walls, so editing walls updates room floors and areas 
 - U-shaped stairs and winders are not detected automatically from drawings (straight and L-shaped are); set the shape in the stair inspector.
 - Roofs cover the bounding rectangle of a level's walls, so L-shaped footprints get one roof over the whole rectangle.
 - Curved walls are made of short straight segments (smooth at normal viewing distances).
+
+## Credits
+
+Material textures in `public/textures` come from [Poly Haven](https://polyhaven.com) and [ambientCG](https://ambientcg.com),
+both CC0 (public domain). `scripts/textures.py` downloads and converts them; run it again to change or add materials.
 
 ## Tech
 
