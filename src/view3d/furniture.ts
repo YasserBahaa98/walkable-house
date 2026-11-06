@@ -57,6 +57,7 @@ function lampShade(color: string): THREE.MeshStandardMaterial {
   return m;
 }
 const METAL = '#2b2d30';
+const mirrorMaterial = new THREE.MeshStandardMaterial({ color: '#dfe7ec', roughness: 0.04, metalness: 1 });
 const WHITE = '#f4f3f0';
 
 function legs(g: THREE.Group, w: number, d: number, h: number, inset: number, size: number, mat: THREE.Material) {
@@ -202,6 +203,53 @@ const builders: Record<Item['type'], Builder> = {
     add(g, solid('#dfe7ea', 0.1), w * 0.6, 0.005, d * 0.55, 0, h, 0.02);
     cylinder(g, solid('#c0c4c8', 0.2, 0.9), 0.012, 0.012, 0.18, 0, h, -d / 2 + 0.06, 10);
     add(g, solid(METAL, 0.4, 0.5), Math.min(0.6, w * 0.9), 0.7, 0.02, 0, h + 0.3, -d / 2 + 0.01);
+  },
+  art: (g, { w, d, h, color }) => {
+    // Framed abstract print: a few soft blocks of colour on a light canvas.
+    const frame = solid('#2c2925', 0.6);
+    add(g, frame, w, h, d * 0.6, 0, 0, -d * 0.2);
+    add(g, solid('#f1ebe1', 0.95), w - 0.06, h - 0.06, d * 0.6, 0, 0.03, -d * 0.15);
+    const z = d * 0.15 + 0.002;
+    add(g, solid(color, 0.9), (w - 0.06) * 0.45, (h - 0.06) * 0.55, 0.004, -w * 0.14, h * 0.32, z);
+    add(g, solid(shade(color, 0.55), 0.9), (w - 0.06) * 0.3, (h - 0.06) * 0.35, 0.004, w * 0.2, h * 0.16, z + 0.001);
+    add(g, solid(shade(color, 1.35), 0.9), (w - 0.06) * 0.22, (h - 0.06) * 0.22, 0.004, w * 0.24, h * 0.62, z + 0.002);
+  },
+  mirror: (g, { w, d, h, color }) => {
+    add(g, solid(color, 0.45, 0.5), w, h, d, 0, 0, 0, 0.01);
+    add(g, mirrorMaterial, w - 0.06, h - 0.06, 0.004, 0, 0.03, d / 2 + 0.002);
+  },
+  curtain: (g, { w, d, h, color }) => {
+    // Open curtains: a rod across the window and a gathered panel at each side.
+    add(g, solid(METAL, 0.4, 0.7), w, 0.025, 0.025, 0, h - 0.03, 0);
+    const fabric = solid(color, 0.98), fold = solid(shade(color, 0.86), 0.98);
+    const panel = Math.min(0.45, w * 0.22);
+    const folds = 5, fw = panel / folds;
+    for (const side of [-1, 1]) {
+      for (let k = 0; k < folds; k++) {
+        const x = side * (w / 2 - panel + fw * (k + 0.5));
+        add(g, k % 2 ? fold : fabric, fw + 0.01, h - 0.06, d * (k % 2 ? 0.45 : 0.8), x, 0.01, k % 2 ? -d * 0.1 : 0);
+      }
+    }
+  },
+  nightstand: (g, { w, d, h, color }) => {
+    add(g, solid(color, 0.6), w, h - 0.06, d, 0, 0.06, 0, 0.01);
+    legs(g, w, d, 0.06, 0.03, 0.03, solid(shade(color, 0.6), 0.6));
+    add(g, solid(shade(color, 0.85), 0.6), w - 0.04, 0.004, 0.004, 0, h * 0.55, d / 2 + 0.001);
+    add(g, solid(METAL, 0.3, 0.8), 0.08, 0.015, 0.02, 0, h * 0.72, d / 2 + 0.01);
+  },
+  vase: (g, { w, h, color }) => {
+    const vh = h * 0.45;
+    cylinder(g, solid('#e9e4dc', 0.25), w * 0.3, w * 0.22, vh, 0, 0, 0, 16);
+    const stem = solid('#5b7a4b', 0.8), bloom = solid(color, 0.7);
+    for (let k = 0; k < 6; k++) {
+      const a = (k / 6) * Math.PI * 2, r = w * (0.12 + (k % 2) * 0.12);
+      const top = vh + (h - vh) * (0.7 + (k % 3) * 0.12);
+      cylinder(g, stem, 0.004, 0.004, top - vh + 0.02, Math.cos(a) * r * 0.5, vh - 0.02, Math.sin(a) * r * 0.5, 5);
+      const m = new THREE.Mesh(new THREE.IcosahedronGeometry(w * 0.13, 1), bloom);
+      m.position.set(Math.cos(a) * r, top, Math.sin(a) * r);
+      m.castShadow = true;
+      g.add(m);
+    }
   },
   box: (g, { w, d, h, color }) => add(g, solid(color, 0.75), w, h, d, 0, 0, 0, 0.02),
   model: (g, { w, d, h, color }) => add(g, solid(color, 0.75), w, h, d, 0, 0, 0, 0.02),

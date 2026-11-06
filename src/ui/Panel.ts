@@ -4,6 +4,7 @@ import { CATALOG } from '../model/catalog';
 import { uid } from '../model/ids';
 import { formatArea, formatLength, parseLength } from '../model/units';
 import { checkLevel, type Issue } from '../geometry/checks';
+import { furnishRoom, itemsInRoom } from '../geometry/furnish';
 import { roomRegions } from '../geometry/rooms';
 import { stairRise, stepCount } from '../geometry/stairs';
 import { curveWall, splitWall, wallLength } from '../geometry/walls';
@@ -15,6 +16,13 @@ import { confirmDialog, promptDialog, toast } from './feedback';
 import { cap, FieldKit, header, section, segmented, stat } from './fields';
 
 type Tab = 'inspect' | 'library' | 'report' | 'view';
+
+/** Wall paint presets: soft, livable colours. */
+const PAINTS: { color: string; label: string }[] = [
+  { color: '#f2eee8', label: 'Warm white' }, { color: '#e8dccb', label: 'Sand' }, { color: '#d9c4b0', label: 'Latte' },
+  { color: '#c9d3c0', label: 'Sage' }, { color: '#bfd0d8', label: 'Mist blue' }, { color: '#e6c9c4', label: 'Blush' },
+  { color: '#8fa391', label: 'Eucalyptus' }, { color: '#566a7a', label: 'Slate blue' }, { color: '#3d4a45', label: 'Forest' },
+];
 
 const FLOORS: { id: FloorMaterial; label: string }[] = [
   { id: 'oak', label: 'Oak' }, { id: 'walnut', label: 'Walnut' }, { id: 'tile', label: 'Tile' },
@@ -79,6 +87,7 @@ export class Panel {
       this.tab === 'report' || this.tab === 'view' || !sel ? JSON.stringify([s.project.levels.map((l) => [l.name, l.elevation, l.rooms.length, l.walls.length, l.items.length, l.stairs.length, l.roof?.type, l.roof?.ridge, l.roof?.material]), s.project.layouts.map((l) => l.name), s.project.activeLayoutId, s.view, Object.keys(s.project.underlays)]) : '',
       this.tab === 'report' ? JSON.stringify(s.project.levels.map((l) => [l.walls, l.openings, l.rooms, l.items])) : '',
       this.models.length,
+      sel?.kind === 'room' ? JSON.stringify([s.find(), s.level.items.length, s.level.walls.length, this.furnishVariant.has(sel.id)]) : '',
     ].join('|');
     const active = document.activeElement;
     const typing = active instanceof HTMLElement && this.body.contains(active) && /INPUT|TEXTAREA|SELECT/.test(active.tagName);
@@ -136,6 +145,8 @@ export class Panel {
           h('button', { class: 'btn', type: 'button', onclick: () => this.duplicateLevel() }, icon('copy', 16), 'Duplicate'),
           h('button', { class: 'btn btn-danger-ghost', type: 'button', disabled: s.project.levels.length < 2, onclick: () => this.deleteLevel() }, icon('trash', 16), 'Delete'),
         ),
+        h('div', { class: 'btn-row' },
+          h('button', { class: 'btn', type: 'button', disabled: !level.rooms.length, onclick: () => this.furnishEmptyRooms() }, icon('sofa', 16), 'Furnish empty rooms')),
       ]),
       this.roofSection(level),
       section('Reference drawing', ul ? [
@@ -262,7 +273,80 @@ export class Panel {
         reg?.enclosed ? null : h('p', { class: 'warn small' }, icon('warning', 14), ' Walls do not fully enclose this room, so no floor is generated. Close gaps with walls (doors count as walls).'),
       ].filter(Boolean) as Node[]),
       section('Floor finish', [grid]),
-    ];
+      reg?.enclosed ? this.decorateSection(r) : null,
+    ].filter(Boolean) as Node[];
+  }
+
+  /** How many times each room has been furnished in this session (each press gives another layout). */
+  private furnishVariant = new Map<string, number>();
+
+  private decorateSection(r: Room): HTMLElement {
+    const s = this.store;
+    const count = itemsInRoom(s.level, r.id).length;
+    const tried = this.furnishVariant.has(r.id);
+    const paint = h('div', { class: 'paint-swatches', role: 'radiogroup', 'aria-label': 'Wall paint' });
+    const setPaint = (c: string | undefined) => s.mutate((_p, l) => {
+      const x = l.rooms.find((q) => q.id === r.id);
+      if (!x) return;
+      if (c) x.wallColor = c; else delete x.wallColor;
+    }, `room-paint-${r.id}`);
+    paint.append(h('button', {
+      class: 'paint-swatch none', type: 'button', role: 'radio', 'aria-checked': String(!r.wallColor), title: 'Wall colour (unpainted)',
+      'aria-label': 'Unpainted', onclick: () => setPaint(undefined),
+    }));
+    for (const p of PAINTS) {
+      paint.append(h('button', {
+        class: 'paint-swatch', type: 'button', role: 'radio', 'aria-checked': String(r.wallColor === p.color), title: p.label,
+        'aria-label': p.label, style: `background:${p.color}`, onclick: () => setPaint(p.color),
+      }));
+    }
+    return section('Furnish & decorate', [
+      h('p', { class: 'muted small' }, count
+        ? `${count} piece${count === 1 ? '' : 's'} in this room.`
+        : 'This room is empty. Furnish it automatically, or add pieces from the Library tab.'),
+      h('div', { class: 'btn-row' },
+        h('button', { class: 'btn btn-primary', type: 'button', onclick: () => void this.furnish(r) }, icon('sofa', 16), tried ? 'Try another layout' : 'Furnish room'),
+        h('button', { class: 'btn btn-danger-ghost', type: 'button', disabled: !count, onclick: () => this.clearRoom(r) }, icon('trash', 16), 'Clear'),
+      ),
+      h('div', { class: 'field' }, h('span', { class: 'field-label' }, 'Wall paint'), paint),
+      this.f.color('Custom paint', () => (this.cur<Room>() ?? r).wallColor ?? '#f2eee8', (v) => setPaint(v)),
+    ]);
+  }
+
+  private async furnish(r: Room) {
+    const s = this.store;
+    const existing = itemsInRoom(s.level, r.id);
+    const variant = (this.furnishVariant.get(r.id) ?? -1) + 1;
+    if (variant === 0 && existing.length && !(await confirmDialog('Furnish room', `Replace the ${existing.length} piece${existing.length === 1 ? '' : 's'} in “${r.name}” with a new layout? You can undo this.`, 'Replace'))) return;
+    const items = furnishRoom(s.level, r, variant);
+    if (!items?.length) { toast('Nothing fits in this room. Check that its doors and stairs leave some free wall.', 'error'); return; }
+    this.furnishVariant.set(r.id, variant);
+    const old = new Set(existing.map((i) => i.id));
+    s.mutate((_p, l) => { l.items = [...l.items.filter((i) => !old.has(i.id)), ...items]; });
+    toast(`Furnished “${r.name}” with ${items.length} pieces. Press again for another layout.`, 'success');
+  }
+
+  private clearRoom(r: Room) {
+    const s = this.store;
+    const old = new Set(itemsInRoom(s.level, r.id).map((i) => i.id));
+    s.mutate((_p, l) => { l.items = l.items.filter((i) => !old.has(i.id)); });
+    this.furnishVariant.delete(r.id);
+  }
+
+  private furnishEmptyRooms() {
+    const s = this.store;
+    const regions = roomRegions(s.level);
+    const empty = s.level.rooms.filter((r) => regions.get(r.id)?.enclosed && !itemsInRoom(s.level, r.id).length);
+    if (!empty.length) { toast('Every closed room on this level already has furniture.'); return; }
+    let added = 0;
+    s.mutate((_p, l) => {
+      for (const r of empty) {
+        const items = furnishRoom(l, r) ?? [];
+        l.items.push(...items);
+        added += items.length;
+      }
+    });
+    toast(`Furnished ${empty.length} room${empty.length === 1 ? '' : 's'} with ${added} pieces.`, 'success');
   }
 
   private itemSection(it: Item): Node[] {

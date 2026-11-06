@@ -146,4 +146,26 @@ test.describe('Walkable House', () => {
     await (await chooser).setFiles(fixture('box.gltf'));
     await expect(page.locator('.toast-error')).toContainText('Missing files: box.bin');
   });
+
+  test('furnishes and paints a room, and undoes it', async ({ page }) => {
+    const errors = await freshStart(page);
+    await page.getByRole('button', { name: 'Explore demo' }).click();
+    await page.getByRole('tab', { name: 'Report' }).click();
+    await page.getByRole('cell', { name: /^Living/ }).first().click();
+    const panel = page.locator('.panel');
+    await panel.getByRole('button', { name: 'Furnish room' }).click();
+    await page.getByRole('dialog').getByRole('button', { name: 'Replace' }).click();
+    await expect(page.locator('.toast').last()).toContainText(/Furnished “Living.*” with \d+ pieces/);
+    await expect(panel.getByRole('button', { name: 'Try another layout' })).toBeVisible();
+    await panel.getByRole('button', { name: 'Try another layout' }).click();
+    await panel.getByRole('radio', { name: 'Sage' }).click();
+    await expect(panel.getByRole('radio', { name: 'Sage' })).toHaveAttribute('aria-checked', 'true');
+    await page.keyboard.press('Control+z');
+    await expect(panel.getByRole('radio', { name: 'Unpainted' })).toHaveAttribute('aria-checked', 'true');
+    await page.locator('.level-tab').first().click();
+    await page.getByRole('tab', { name: 'Inspect' }).click();
+    await page.keyboard.press('Escape');
+    await expect(panel.getByRole('button', { name: 'Furnish empty rooms' })).toBeVisible();
+    expect(errors).toEqual([]);
+  });
 });

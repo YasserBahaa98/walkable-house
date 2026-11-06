@@ -2,7 +2,7 @@ import * as THREE from 'three';
 import type { Item, Level, Opening, Stair, Wall } from '../model/types';
 import type { Obb } from '../geometry/math';
 import { cutHoles } from '../geometry/holes';
-import { roomRegions, type Rect } from '../geometry/rooms';
+import { roomRegions, roomWallSpans, type Rect } from '../geometry/rooms';
 import { stairFootprint, stairSections } from '../geometry/stairs';
 import { endExtensions, openingSpans, wallPieces } from '../geometry/walls';
 import { buildFurniture } from './furniture';
@@ -51,6 +51,7 @@ export function buildLevel(level: Level, opt: LevelBuildOptions): THREE.Group {
     walls.add(g);
   }
   root.add(walls);
+  addRoomPaint(level, walls, h, ext);
 
   // Floors per enclosed room.
   const floors = new THREE.Group();
@@ -126,6 +127,44 @@ export function buildItem(it: Item, opt: Pick<LevelBuildOptions, 'model'>, level
   g.traverse((o) => { if (o instanceof THREE.Mesh) { o.castShadow = true; o.receiveShadow = true; } });
   g.userData.pick = { kind: 'item', id: it.id, levelId } satisfies Pickable;
   return g;
+}
+
+/**
+ * Rooms with a wall colour get a thin painted skin on the faces of their
+ * walls, only along the stretches that face the room, so a wall shared by two
+ * rooms can have a different colour on each side (or along each half).
+ */
+function addRoomPaint(level: Level, walls: THREE.Group, levelH: number, ext: Map<string, [number, number]>) {
+  const regions = roomRegions(level);
+  for (const r of level.rooms) {
+    const reg = regions.get(r.id);
+    if (!r.wallColor || !reg?.enclosed) continue;
+    const mat = wallMaterial(r.wallColor);
+    for (const span of roomWallSpans(level, reg)) {
+      const w = span.wall;
+      const [e0, e1] = ext.get(w.id) ?? [0, 0];
+      const len = Math.hypot(w.b.x - w.a.x, w.b.z - w.a.z);
+      const g = new THREE.Group();
+      g.position.set(w.a.x, 0, w.a.z);
+      g.rotation.y = -Math.atan2(w.b.z - w.a.z, w.b.x - w.a.x);
+      // In the wall's local frame +Z is the side opposite wallDir's normal.
+      const z = -span.side * (w.thickness / 2 + 0.0015);
+      for (const p of wallPieces(w, level.openings, w.height ?? levelH, [e0, e1])) {
+        const from = Math.max(p.from, span.from, -e0), to = Math.min(p.to, span.to, len + e1);
+        const ph = p.top - p.bottom;
+        if (to - from < 1e-3 || ph < 1e-3) continue;
+        const skin = new THREE.Mesh(new THREE.PlaneGeometry(to - from, ph), mat);
+        skin.position.set((from + to) / 2, p.bottom + ph / 2, z);
+        if (z < 0) skin.rotation.y = Math.PI;
+        skin.receiveShadow = true;
+        g.add(skin);
+      }
+      if (g.children.length) {
+        g.userData.pick = { kind: 'wall', id: w.id, levelId: level.id } satisfies Pickable;
+        walls.add(g);
+      }
+    }
+  }
 }
 
 function buildWall(w: Wall, openings: Opening[], height: number, ext: [number, number], opt: LevelBuildOptions): THREE.Group {

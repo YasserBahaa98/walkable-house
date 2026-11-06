@@ -1043,7 +1043,7 @@ export class PlanView {
     ctx.fill();
     ctx.stroke();
     // Front edge marker (local +Z).
-    if (it.type !== 'rug' && it.type !== 'plant' && it.type !== 'lamp') {
+    if (it.type !== 'rug' && it.type !== 'plant' && it.type !== 'lamp' && it.type !== 'vase') {
       ctx.strokeStyle = withAlpha(th.wall, 0.45);
       ctx.lineWidth = 2 * px;
       ctx.beginPath();
