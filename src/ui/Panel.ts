@@ -9,7 +9,7 @@ import { roomRegions } from '../geometry/rooms';
 import { stairRise, stepCount } from '../geometry/stairs';
 import { curveWall, splitWall, wallLength } from '../geometry/walls';
 import { normAngle, round3 as round } from '../geometry/math';
-import { floorSwatch } from '../view3d/materials';
+import { floorSwatch, textureSwatchUrl } from '../view3d/materials';
 import type { ModelLibrary } from '../view3d/models';
 import { download, h, icon, iconButton, pickFiles, slug } from './dom';
 import { confirmDialog, promptDialog, toast } from './feedback';
@@ -260,7 +260,11 @@ export class Panel {
       const b = h('button', {
         class: 'swatch', type: 'button', role: 'radio', 'aria-checked': String(r.floor === f.id), title: f.label,
         onclick: () => edit((x) => { x.floor = f.id; }, uid()),
-      }, h('img', { src: this.swatch(f.id), alt: '' }), h('span', {}, f.label));
+      }, h('img', {
+        src: textureSwatchUrl(`floor_${f.id}`), alt: '',
+        // Offline before the photo was ever cached: fall back to the drawn swatch.
+        onerror: (e: Event) => { const img = e.target as HTMLImageElement; if (!img.src.startsWith('data:')) img.src = this.swatch(f.id); },
+      }), h('span', {}, f.label));
       grid.append(b);
     }
     return [

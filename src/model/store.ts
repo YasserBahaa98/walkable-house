@@ -6,8 +6,11 @@ import type { Item, Level, Opening, Project, Room, Selection, Stair, Tool, ViewS
 export type ChangeKind = 'project' | 'view' | 'selection' | 'tool' | 'level' | 'status';
 type Listener = (kinds: Set<ChangeKind>) => void;
 
+/** Touch-only devices (phones, tablets) start on the Fast setting; computers on High. */
+const touchOnly = typeof matchMedia === 'function' && matchMedia('(pointer: coarse)').matches && !matchMedia('(any-pointer: fine)').matches;
+
 export const DEFAULT_VIEW: ViewSettings = {
-  mode: 'orbit', night: false, sun: 135, quality: 'high', cutaway: false, doorsOpen: 0.85,
+  mode: 'orbit', night: false, sun: 135, quality: touchOnly ? 'low' : 'high', cutaway: false, doorsOpen: 0.85,
   eye: 1.62, showUnderlay: true, underlayOpacity: 0.55, showGrid: true, snap: true, units: 'm', ghostLevel: true, showRoof: false,
 };
 

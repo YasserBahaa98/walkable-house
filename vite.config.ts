@@ -42,6 +42,11 @@ export default defineConfig({
           urlPattern: ({ url }) => /\.wasm$|cad\.worker-.*\.js$/.test(url.pathname),
           handler: 'CacheFirst',
           options: { cacheName: 'cad-reader', expiration: { maxEntries: 6 } },
+        }, {
+          // Material textures load on demand and are kept for offline use.
+          urlPattern: ({ url }) => /\/textures\/.*\.webp$/.test(url.pathname),
+          handler: 'CacheFirst',
+          options: { cacheName: 'textures', expiration: { maxEntries: 120 } },
         }],
       },
     }),

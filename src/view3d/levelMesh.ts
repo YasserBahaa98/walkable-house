@@ -8,7 +8,7 @@ import { endExtensions, openingSpans, wallPieces } from '../geometry/walls';
 import { buildFurniture } from './furniture';
 import { buildRoof } from './roofMesh';
 import { mergeByMaterial } from './merge';
-import { floorMaterial, glassMaterial, solid, wallMaterial, worldUV } from './materials';
+import { boxUV, ceilingMaterial, floorMaterial, glassMaterial, solid, wallMaterial, worldUV } from './materials';
 
 export interface Pickable { kind: 'wall' | 'opening' | 'room' | 'item' | 'stair'; id: string; levelId: string }
 
@@ -73,13 +73,14 @@ export function buildLevel(level: Level, opt: LevelBuildOptions): THREE.Group {
   const bounds = slabBounds(level);
   if (bounds) {
     const rects = cutHoles([boundsRect(bounds)], opt.holes);
-    const slab = new THREE.Mesh(slabGeometry(rects, -SLAB, 0), solid('#d4cfc7', 0.95));
+    // An upper storey's slab is the ceiling of the room below it.
+    const slab = new THREE.Mesh(slabGeometry(rects, -SLAB, 0), level.elevation > 0.5 ? ceilingMaterial : solid('#d4cfc7', 0.95));
     slab.receiveShadow = true;
     slab.castShadow = true;
     slab.name = 'slab';
     root.add(slab);
     if (opt.ceiling) {
-      const ceil = new THREE.Mesh(slabGeometry(cutHoles([boundsRect(bounds)], level.stairs.flatMap(stairFootprint)), opt.wallHeight, opt.wallHeight + 0.15), solid('#f5f3ef', 0.95));
+      const ceil = new THREE.Mesh(slabGeometry(cutHoles([boundsRect(bounds)], level.stairs.flatMap(stairFootprint)), opt.wallHeight, opt.wallHeight + 0.15), ceilingMaterial);
       ceil.name = 'ceiling';
       ceil.receiveShadow = true;
       root.add(ceil);
@@ -153,7 +154,7 @@ function addRoomPaint(level: Level, walls: THREE.Group, levelH: number, ext: Map
         const from = Math.max(p.from, span.from, -e0), to = Math.min(p.to, span.to, len + e1);
         const ph = p.top - p.bottom;
         if (to - from < 1e-3 || ph < 1e-3) continue;
-        const skin = new THREE.Mesh(new THREE.PlaneGeometry(to - from, ph), mat);
+        const skin = new THREE.Mesh(boxUV(new THREE.PlaneGeometry(to - from, ph)), mat);
         skin.position.set((from + to) / 2, p.bottom + ph / 2, z);
         if (z < 0) skin.rotation.y = Math.PI;
         skin.receiveShadow = true;
@@ -176,7 +177,7 @@ function buildWall(w: Wall, openings: Opening[], height: number, ext: [number, n
   for (const p of wallPieces(w, openings, height, ext)) {
     const len = p.to - p.from, ph = p.top - p.bottom;
     if (len <= 1e-4 || ph <= 1e-4) continue;
-    const m = new THREE.Mesh(new THREE.BoxGeometry(len, ph, t), mat);
+    const m = new THREE.Mesh(boxUV(new THREE.BoxGeometry(len, ph, t)), mat);
     m.position.set((p.from + p.to) / 2, p.bottom + ph / 2, 0);
     m.castShadow = true;
     m.receiveShadow = true;
