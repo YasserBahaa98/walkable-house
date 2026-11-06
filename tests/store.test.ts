@@ -58,14 +58,20 @@ describe('Store', () => {
     expect([...fn.mock.calls[0][0]]).toEqual(expect.arrayContaining(['selection', 'view']));
   });
 
-  it('keeps reference drawings out of undo history', () => {
+  it('undoes changes to reference drawings together with the plan', () => {
     const p = sampleProject();
     p.underlays[p.levels[0].id] = { kind: 'cad', segments: [0, 0, 1, 1] };
     const s = new Store(p);
-    s.mutate((_p, l) => { l.name = 'Renamed'; });
+    s.mutate((proj, l) => {
+      l.name = 'Renamed';
+      const ul = proj.underlays[l.id];
+      if (ul.kind === 'cad') ul.segments = ul.segments.map((v) => v * 2);
+    });
     s.undo();
     expect(s.level.name).toBe('Ground floor');
-    expect(s.project.underlays[s.level.id]).toBeTruthy();
+    expect(s.project.underlays[s.level.id]).toEqual({ kind: 'cad', segments: [0, 0, 1, 1] });
+    s.redo();
+    expect(s.project.underlays[s.level.id]).toEqual({ kind: 'cad', segments: [0, 0, 2, 2] });
   });
 });
 

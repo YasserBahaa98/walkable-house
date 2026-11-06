@@ -14,6 +14,12 @@ export const DEFAULT_VIEW: ViewSettings = {
 const HISTORY_LIMIT = 150;
 const MERGE_WINDOW_MS = 1200;
 
+/**
+ * History entry. Reference drawings can be large, so their JSON is shared
+ * between snapshots until it actually changes (same string instance).
+ */
+interface Snapshot { project: string; underlays: string }
+
 export interface PersistAdapter {
   save(project: Project, view: ViewSettings): Promise<void>;
 }
@@ -30,8 +36,9 @@ export class Store {
   tool: Tool = 'select';
   saveStatus: 'saved' | 'saving' | 'error' = 'saved';
 
-  private undoStack: string[] = [];
-  private redoStack: string[] = [];
+  private undoStack: Snapshot[] = [];
+  private redoStack: Snapshot[] = [];
+  private underlayCache: { sig: string; json: string } | null = null;
   private lastMerge: { key: string; at: number } | null = null;
   private listeners = new Set<Listener>();
   private pending = new Set<ChangeKind>();
@@ -234,17 +241,17 @@ export class Store {
   }
 
   // -------------------------------------------------------------- internal
-  private snapshot(): string {
-    const { underlays: _ignored, ...rest } = this.project;
-    void _ignored;
-    return JSON.stringify(rest);
+  private snapshot(): Snapshot {
+    const { underlays, ...rest } = this.project;
+    const sig = underlaySignature(underlays);
+    if (!this.underlayCache || this.underlayCache.sig !== sig) this.underlayCache = { sig, json: JSON.stringify(underlays) };
+    return { project: JSON.stringify(rest), underlays: this.underlayCache.json };
   }
 
-  private restore(json: string) {
-    const underlays = this.project.underlays;
-    const restored = parseProject({ ...JSON.parse(json), underlays });
-    restored.underlays = underlays;
+  private restore(snap: Snapshot) {
+    const restored = parseProject({ ...JSON.parse(snap.project), underlays: JSON.parse(snap.underlays) });
     this.project = restored;
+    this.underlayCache = null;
     if (!restored.levels.some((l) => l.id === this.activeLevelId)) {
       this.activeLevelId = restored.levels[0].id;
       this.emit('level');
@@ -272,4 +279,16 @@ export class Store {
         .finally(() => this.emit('status'));
     }, 600);
   }
+}
+
+/** Cheap change detector for reference drawings (avoids re-serialising them on every edit). */
+function underlaySignature(u: Project['underlays']): string {
+  return Object.entries(u).map(([k, v]) => {
+    if (v.kind === 'image') return `${k}:i:${v.x}:${v.z}:${v.scale}:${v.dataUrl.length}`;
+    const s = v.segments;
+    let h = s.length;
+    const step = Math.max(1, Math.floor(s.length / 64));
+    for (let i = 0; i < s.length; i += step) h = (h * 31 + Math.round(s[i] * 1000)) | 0;
+    return `${k}:c:${s.length}:${h}`;
+  }).join('|');
 }
