@@ -177,7 +177,7 @@ Tailor to the change type so small PRs stay small:
 - Past or present tense consistently; the title is imperative.
 - Don't repeat the diff. Explain intent and consequences.
 - Don't mention which AI model was used in the title, body, or commits.
-- When creating the PR, follow any attribution lines given in the session context for PR descriptions.
+- Never add a link to the Claude session (or any session URL) to the title, body or commits.
 
 ## Creating the PR
 
@@ -187,10 +187,11 @@ gh pr create --base <base> --title "<title>" --body-file <path-to-body.md>
 ```
 
 Write the body to a temp file and use `--body-file` to avoid shell-escaping problems.
+Do not add reviewers, labels, or assignees unless the user asks. Only create the PR when the user has asked for one.
 
 If `gh pr create` / `gh pr edit` fail because GitHub's GraphQL API is unavailable (some sandboxed environments), use the REST API instead:
 
 ```bash
 gh api repos/<owner>/<repo>/pulls -f title="<title>" -f head=<branch> -f base=<base> -F body=@<path-to-body.md>   # create
 gh api -X PATCH repos/<owner>/<repo>/pulls/<number> -F body=@<path-to-body.md>                                 # update body
-``` Do not add reviewers, labels, or assignees unless the user asks. Only create the PR when the user has asked for one.
+```
