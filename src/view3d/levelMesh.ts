@@ -1,8 +1,9 @@
 import * as THREE from 'three';
 import type { Item, Level, Opening, Stair, Wall } from '../model/types';
-import { type Obb, pointInObb } from '../geometry/math';
+import type { Obb } from '../geometry/math';
+import { cutHoles } from '../geometry/holes';
 import { roomRegions, type Rect } from '../geometry/rooms';
-import { stairSections } from '../geometry/stairs';
+import { stairFootprint, stairSections } from '../geometry/stairs';
 import { endExtensions, openingSpans, wallPieces } from '../geometry/walls';
 import { buildFurniture } from './furniture';
 import { buildRoof } from './roofMesh';
@@ -58,7 +59,9 @@ export function buildLevel(level: Level, opt: LevelBuildOptions): THREE.Group {
   for (const r of level.rooms) {
     const reg = regions.get(r.id);
     if (!reg?.enclosed || !reg.rects.length) continue;
-    const mesh = new THREE.Mesh(rectsGeometry(reg.rects, 0.004), floorMaterial(r.floor));
+    const rects = cutHoles(reg.rects, opt.holes);
+    if (!rects.length) continue;
+    const mesh = new THREE.Mesh(rectsGeometry(rects, 0.004), floorMaterial(r.floor));
     mesh.receiveShadow = true;
     pick(mesh, 'room', r.id);
     floors.add(mesh);
@@ -68,14 +71,14 @@ export function buildLevel(level: Level, opt: LevelBuildOptions): THREE.Group {
   // Structural slab under the whole level (with stairwell holes).
   const bounds = slabBounds(level);
   if (bounds) {
-    const rects = slabRects(bounds, opt.holes);
+    const rects = cutHoles([boundsRect(bounds)], opt.holes);
     const slab = new THREE.Mesh(slabGeometry(rects, -SLAB, 0), solid('#d4cfc7', 0.95));
     slab.receiveShadow = true;
     slab.castShadow = true;
     slab.name = 'slab';
     root.add(slab);
     if (opt.ceiling) {
-      const ceil = new THREE.Mesh(slabGeometry(slabRects(bounds, []), opt.wallHeight, opt.wallHeight + 0.15), solid('#f5f3ef', 0.95));
+      const ceil = new THREE.Mesh(slabGeometry(cutHoles([boundsRect(bounds)], level.stairs.flatMap(stairFootprint)), opt.wallHeight, opt.wallHeight + 0.15), solid('#f5f3ef', 0.95));
       ceil.name = 'ceiling';
       ceil.receiveShadow = true;
       root.add(ceil);
@@ -316,37 +319,4 @@ function slabBounds(level: Level): SB | null {
   return { minX, minZ, maxX, maxZ };
 }
 
-/** Slab rectangles covering the bounds minus stairwell holes (merged grid cells). */
-function slabRects(b: SB, holes: Obb[]): Rect[] {
-  if (!holes.length) return [{ x: b.minX, z: b.minZ, w: b.maxX - b.minX, d: b.maxZ - b.minZ }];
-  const cell = Math.max(0.05, Math.max(b.maxX - b.minX, b.maxZ - b.minZ) / 800);
-  const nx = Math.max(1, Math.ceil((b.maxX - b.minX) / cell)), nz = Math.max(1, Math.ceil((b.maxZ - b.minZ) / cell));
-  const rects: Rect[] = [];
-  let open = new Map<string, Rect>();
-  for (let j = 0; j < nz; j++) {
-    const next = new Map<string, Rect>();
-    let i = 0;
-    const filled = (ii: number) => {
-      const x = b.minX + (ii + 0.5) * cell, z = b.minZ + (j + 0.5) * cell;
-      return !holes.some((h) => pointInObb(h, x, z, 0.02));
-    };
-    while (i < nx) {
-      if (!filled(i)) { i++; continue; }
-      const s = i;
-      while (i < nx && filled(i)) i++;
-      const key = `${s}:${i}`;
-      const prev = open.get(key);
-      const z = b.minZ + j * cell;
-      const x0 = b.minX + s * cell, x1 = Math.min(b.maxX, b.minX + i * cell);
-      const dz = Math.min(cell, b.maxZ - z);
-      if (prev) { prev.d += dz; next.set(key, prev); open.delete(key); } else {
-        const r = { x: x0, z, w: x1 - x0, d: dz };
-        rects.push(r);
-        next.set(key, r);
-      }
-    }
-    open = next;
-  }
-  return rects;
-}
-
+const boundsRect = (b: SB): Rect => ({ x: b.minX, z: b.minZ, w: b.maxX - b.minX, d: b.maxZ - b.minZ });

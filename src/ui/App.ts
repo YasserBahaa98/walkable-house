@@ -1,8 +1,7 @@
-import type { Store } from '../model/store';
+import { emptyLevelAbove, type Store } from '../model/store';
 import type { Vec2 } from '../model/types';
 import { emptyProject, sampleProject } from '../model/sample';
 import { formatLength, parseLength } from '../model/units';
-import { uid } from '../model/ids';
 import { dist } from '../geometry/math';
 import { scaleLevel } from '../geometry/transform';
 import { PlanView } from '../view2d/PlanView';
@@ -298,13 +297,7 @@ export class App {
   }
 
   private addLevelQuick() {
-    const s = this.store;
-    const top = s.sortedLevels().at(-1)!;
-    const id = uid('L');
-    s.mutate((p) => {
-      p.levels.push({ id, name: `Level ${p.levels.length + 1}`, elevation: Math.round((top.elevation + top.height + 0.3) * 1000) / 1000, height: top.height, walls: [], openings: [], rooms: [], items: [], stairs: [] });
-    });
-    s.setLevel(id);
+    this.store.addLevelOnTop(emptyLevelAbove(this.store.project.levels.length));
   }
 
   private startCalibrate() {

@@ -1,4 +1,4 @@
-import type { Store } from '../model/store';
+import { emptyLevelAbove, type Store } from '../model/store';
 import type { FloorMaterial, FurnitureType, Item, Level, Opening, Room, Stair, Units, Wall } from '../model/types';
 import { CATALOG } from '../model/catalog';
 import { uid } from '../model/ids';
@@ -170,7 +170,10 @@ export class Panel {
       nodes.push(h('div', { class: 'field' }, h('span', { class: 'field-label' }, 'Covering'),
         segmented([{ id: 'clay', label: 'Clay tiles' }, { id: 'slate', label: 'Slate' }, { id: 'metal', label: 'Metal' }], roof.material,
           (v) => edit((r) => { r.material = v as 'clay' | 'slate' | 'metal'; }, uid()))));
-      nodes.push(h('p', { class: 'muted small' }, 'Visible when walking. In the orbit view, toggle it with the roof button or T.'));
+      const above = s.levelAbove(level);
+      nodes.push(h('p', { class: 'muted small' }, above?.walls.length
+        ? `Hidden while ${above.name} is built on top of this level. Choose “None”, or move the roof to the top level.`
+        : 'Visible when walking. In the orbit view, toggle it with the roof button or T.'));
     }
     return section('Roof', nodes);
   }
@@ -514,34 +517,25 @@ export class Panel {
   }
 
   private addLevel() {
-    const s = this.store;
-    const top = s.sortedLevels()[s.sortedLevels().length - 1];
-    const id = uid('L');
-    s.mutate((p) => {
-      p.levels.push({ id, name: `Level ${p.levels.length + 1}`, elevation: round(top.elevation + top.height + 0.3), height: top.height, walls: [], openings: [], rooms: [], items: [], stairs: [] });
-    });
-    s.setLevel(id);
+    this.store.addLevelOnTop(emptyLevelAbove(this.store.project.levels.length));
     toast('New level added. Tip: “Duplicate” copies the walls of a level.');
   }
 
   private duplicateLevel() {
-    const s = this.store;
-    const src = s.level;
-    const top = s.sortedLevels()[s.sortedLevels().length - 1];
-    const id = uid('L');
-    s.mutate((p) => {
+    const src = this.store.level;
+    this.store.addLevelOnTop((top) => {
       const idMap = new Map<string, string>();
       const walls = src.walls.map((w) => { const nid = uid('w'); idMap.set(w.id, nid); return { ...structuredClone(w), id: nid }; });
-      p.levels.push({
-        id, name: `${src.name} copy`, elevation: round(top.elevation + top.height + 0.3), height: src.height,
+      return {
+        name: `${src.name} copy`, elevation: round(top.elevation + top.height + 0.3), height: src.height,
         walls,
         openings: src.openings.map((o) => ({ ...o, id: uid('o'), wallId: idMap.get(o.wallId)! })),
         rooms: src.rooms.map((r) => ({ ...structuredClone(r), id: uid('r') })),
         items: [], stairs: [],
-      });
+      };
     });
-    s.setLevel(id);
   }
+
 
   private async deleteLevel() {
     const s = this.store;
