@@ -190,4 +190,49 @@ test.describe('Walkable House', () => {
     await expect(panel.getByText('labelled with its name')).toBeVisible();
     expect(errors).toEqual([]);
   });
+
+  test('adds furniture from a product link (API mocked)', async ({ page }) => {
+    const errors = await freshStart(page);
+    let request: { headers: Record<string, string>; body: Record<string, unknown> } | null = null;
+    await page.route('https://api.anthropic.com/**', async (route) => {
+      const cors = { 'access-control-allow-origin': '*', 'access-control-allow-headers': '*', 'access-control-allow-methods': 'POST' };
+      if (route.request().method() !== 'POST') { await route.fulfill({ status: 204, headers: cors }); return; }
+      request = { headers: await route.request().allHeaders(), body: route.request().postDataJSON() };
+      const spec = {
+        name: 'BESTÅ TV bench', type: 'sideboard', width_cm: 180, depth_cm: 42, height_cm: 38, size_source: 'listed', color: '#2f3133', finish: 'painted',
+        style: { arms: null, back: null, legs: 'hairpin', top: null, base: null, doors: 3, drawers: 0, shelves: 'open', handles: 'none' },
+        parts: [{ part: 'top', color: '#a47551', finish: 'wood' }], notes: '',
+      };
+      await route.fulfill({
+        status: 200, contentType: 'application/json',
+        headers: { 'access-control-allow-origin': '*', 'access-control-allow-headers': '*' },
+        body: JSON.stringify({
+          id: 'msg_test', type: 'message', role: 'assistant', model: 'claude-opus-5-5', stop_reason: 'end_turn', stop_sequence: null,
+          content: [{ type: 'text', text: JSON.stringify(spec) }], usage: { input_tokens: 10, output_tokens: 10 },
+        }),
+      });
+    });
+    await page.getByRole('button', { name: 'Explore demo' }).click();
+    await page.getByRole('tab', { name: 'Library' }).click();
+    await page.getByRole('button', { name: 'Add from photo or link…' }).click();
+    const dlg = page.getByRole('dialog', { name: 'Add from photo or link' });
+    await dlg.getByLabel('Product link').fill('https://www.ikea.com/gb/en/p/besta-tv-bench-12345/');
+    await dlg.getByLabel('Anthropic API key').fill('sk-ant-test');
+    await dlg.getByRole('button', { name: 'Describe item' }).click();
+    await expect(dlg.getByText('Measurements taken from the product listing.')).toBeVisible();
+    await expect(dlg.getByLabel('Width (cm)')).toHaveValue('180');
+    await dlg.getByRole('button', { name: 'Add to plan' }).click();
+    const panel = page.locator('.panel');
+    await expect(panel.locator('.inspector-title')).toHaveText('BESTÅ TV bench');
+    await expect(panel.getByLabel('Type', { exact: true })).toHaveValue('sideboard');
+    await expect(panel.getByLabel('Shelves', { exact: true })).toHaveValue('open');
+    expect(request!.headers.authorization ?? request!.headers['x-api-key']).toMatch(/sk-ant-test/);
+    expect(request!.headers['anthropic-dangerous-direct-browser-access']).toBe('true');
+    expect((request!.body.tools as { type: string }[])[0].type).toBe('web_fetch_20260209');
+    // The key is remembered for next time.
+    await page.getByRole('tab', { name: 'Library' }).click();
+    await page.getByRole('button', { name: 'Add from photo or link…' }).click();
+    await expect(dlg.getByText('Using the API key saved in this browser.')).toBeVisible();
+    expect(errors).toEqual([]);
+  });
 });

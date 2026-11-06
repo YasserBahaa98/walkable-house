@@ -33,6 +33,7 @@ macOS, Linux, tablets and phones. Your work is saved locally; nothing is uploade
 - Decor: wall art, mirrors, curtains, vases with flowers, nightstands, side tables, rugs, plants and lamps.
 - **Furniture styles**: arms or none, solid/slatted/upholstered backs, round-tapered, square, hairpin or sled legs, round or rectangular tops on four legs or a pedestal, and for storage the number of doors and drawers, open or closed shelves and bar, knob or push handles. Door and drawer counts follow the piece's size unless you set them.
 - **Materials per part**: wood, painted, fabric, velvet, leather, metal, stone, glass or plastic for the whole piece and separately for legs, seat, top, fronts or frame (oak legs on a grey fabric chair).
+- **Add from photo or link**: paste a product link (IKEA or any shop) and/or a picture or screenshot, and Claude describes the piece in the app's own vocabulary (type, measurements, colours, finishes, style options and per-part materials). You check the result, then it is built like any other piece and can be edited in the inspector. Uses your own Anthropic API key, kept only in your browser; each item costs a few cents. Measurements come from the listing when available and are marked as estimated otherwise.
 - Sideboards and TV units, stools and bar stools, ottomans and poufs, bunk beds, chests of drawers and open shelving, plus a **labelled box** of the right size, colour and material for anything else.
 
 **Experience (3D)**
@@ -131,6 +132,10 @@ Tips for CAD files:
 There is no server-side configuration. User-facing settings (units, lighting, quality, snapping, grid, eye
 height, etc.) live in the **View** tab and are saved per browser. Build-time options are in `vite.config.ts`
 (PWA manifest and caching) and `playwright.config.ts` (end-to-end tests).
+
+**Add from photo or link** calls the Anthropic API directly from the browser with the user's own key (asked for
+the first time, optionally remembered in `localStorage`). It uses Claude Opus 5.5 with structured JSON output,
+the web fetch tool for links, and server-side refusal fallback. The SDK loads only when the feature is used.
 
 ## Development
 

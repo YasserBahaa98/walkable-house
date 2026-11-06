@@ -430,3 +430,19 @@ kbd { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 11
   .pane-head .icon-btn { width: 32px; }
   .segmented button { padding: 4px 8px; }
 }
+
+/* ------------------------------------------------- add from photo or link */
+.product-dialog { width: min(560px, calc(100vw - 32px)); }
+.product-dialog .modal-body { display: flex; flex-direction: column; gap: 12px; }
+.drop-zone { border: 1.5px dashed var(--border-strong); border-radius: 10px; padding: 14px; text-align: center; background: var(--surface-2); display: flex; flex-direction: column; align-items: center; gap: 8px; }
+.drop-zone.over, .drop-zone:focus-visible { border-color: var(--accent); background: var(--accent-soft); outline: none; }
+.drop-preview { max-width: 100%; max-height: 180px; border-radius: 6px; object-fit: contain; }
+.link-btn { background: none; border: 0; padding: 0; color: var(--accent); font: inherit; cursor: pointer; text-decoration: underline; }
+.key-box { display: flex; flex-direction: column; gap: 8px; }
+.key-box .toggle { justify-content: flex-start; }
+.working { display: flex; flex-direction: column; align-items: center; gap: 8px; padding: 28px 0; text-align: center; }
+.working .spinner { border-color: var(--border); border-top-color: var(--accent); }
+.working p { margin: 0; }
+.product-summary { display: flex; gap: 12px; align-items: flex-start; padding: 10px; border: 1px solid var(--border); border-radius: 10px; background: var(--surface-2); }
+.product-summary p { margin: 2px 0 0; }
+.color-chip { flex: none; width: 36px; height: 36px; border-radius: 8px; border: 1px solid var(--border-strong); }
