@@ -218,7 +218,7 @@ export class Panel {
       grid.append(b);
     }
     return [
-      header('Room', 'room', () => s.deleteSelection()),
+      this.liveHeader(() => (this.cur<Room>() ?? r).name, 'room', () => s.deleteSelection()),
       section('Details', [
         this.textField('Name', () => (this.cur<Room>() ?? r).name, (v) => edit((x) => { x.name = v || x.name; }, `room-n-${r.id}`)),
         h('div', { class: 'stat-row' },
@@ -240,7 +240,7 @@ export class Panel {
       ...types.map((t) => h('option', { value: t, selected: t === it.type }, cap(t))));
     typeSel.addEventListener('change', () => edit((x) => { x.type = typeSel.value as FurnitureType; }, uid()));
     return [
-      header(it.name, 'sofa', () => s.deleteSelection()),
+      this.liveHeader(() => cur().name, 'sofa', () => s.deleteSelection()),
       section('Details', [
         this.textField('Name', () => cur().name, (v) => edit((x) => { x.name = v || x.name; }, `it-n-${it.id}`)),
         h('label', { class: 'field' }, h('span', { class: 'field-label' }, 'Type'), typeSel),
@@ -511,6 +511,14 @@ export class Panel {
   }
 
   // -------------------------------------------------------------- fields
+  /** Inspector header whose title follows the edited object's name. */
+  private liveHeader(title: () => string, ic: Parameters<typeof icon>[0], onDelete: () => void): HTMLElement {
+    const el = header(title(), ic, onDelete);
+    const t = el.querySelector('.inspector-title')!;
+    this.refreshers.push(() => { t.textContent = title(); });
+    return el;
+  }
+
   private lengthField(label: string, get: () => number, set: (v: number) => void, min: number, max: number, hint?: string): HTMLElement {
     const units = this.store.view.units;
     const input = h('input', { class: 'input', inputmode: 'decimal', 'aria-label': `${label} (${unitLabel(units)})`, spellcheck: 'false' });
