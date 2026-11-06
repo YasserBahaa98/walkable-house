@@ -1082,11 +1082,19 @@ function roundRect(ctx: CanvasRenderingContext2D, x: number, y: number, w: numbe
   ctx.roundRect(x, y, w, h, Math.max(0, r));
 }
 
-function hex(c: string): [number, number, number] {
-  const m = c.trim().match(/^#?([0-9a-f]{6})$/i);
-  if (!m) return [128, 128, 128];
-  const n = parseInt(m[1], 16);
-  return [(n >> 16) & 255, (n >> 8) & 255, n & 255];
+/** Parse #rgb, #rrggbb or rgb()/rgba() (CSS minifiers shorten theme colours). */
+export function hex(c: string): [number, number, number] {
+  const v = c.trim();
+  const short = v.match(/^#?([0-9a-f])([0-9a-f])([0-9a-f])$/i);
+  if (short) return [1, 2, 3].map((i) => parseInt(short[i] + short[i], 16)) as [number, number, number];
+  const long = v.match(/^#?([0-9a-f]{6})$/i);
+  if (long) {
+    const n = parseInt(long[1], 16);
+    return [(n >> 16) & 255, (n >> 8) & 255, n & 255];
+  }
+  const rgb = v.match(/^rgba?\(\s*([\d.]+)[\s,]+([\d.]+)[\s,]+([\d.]+)/i);
+  if (rgb) return [+rgb[1], +rgb[2], +rgb[3]];
+  return [128, 128, 128];
 }
 function withAlpha(c: string, a: number) {
   const [r, g, b] = hex(c);
