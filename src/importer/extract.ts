@@ -77,7 +77,7 @@ export function guessScale(d: CadDrawing, wallLayers: string[]): number {
   let best = 1, bestScore = Infinity;
   for (const u of UNIT_SCALES) {
     const m = size * u.scale;
-    const score = Math.abs(Math.log(m / 18));
+    const score = Math.abs(Math.log(m / 12));
     if (score < bestScore) { bestScore = score; best = u.scale; }
   }
   return best;

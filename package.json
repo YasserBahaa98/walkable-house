@@ -31,5 +31,8 @@
   "description": "Turn house plans (DWG, DXF or images) into an editable 3D home you can walk through. Offline-first PWA.",
   "engines": {
     "node": ">=20"
+  },
+  "dependencies": {
+    "dxf-parser": "^1.1.2"
   }
 }
