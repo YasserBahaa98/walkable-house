@@ -93,13 +93,15 @@ const FRACTIONS: Record<string, string> = { '¼': '.25', '½': '.5', '¾': '.75'
 const NUM = String.raw`\d+(?:\.\d+)?(?:\s+\d+\/\d+)?|\d+\/\d+`;
 const UNIT = String.raw`cm|mm|m|in(?:ch(?:es)?)?|"|ft|feet|'`;
 
-type Dim = 'w' | 'd' | 'h' | 'len' | 'dia';
+type Dim = 'w' | 'd' | 'h' | 'len' | 'dia' | 'side';
 const LABELS: [RegExp, Dim][] = [
   [/^(?:total |overall )?(?:width|w|ancho|anchura|breite|largeur|bredd|breedte)$/, 'w'],
   [/^(?:total |overall )?(?:depth|d|fondo|profundidad|tiefe|profondeur|djup|diepte)$/, 'd'],
-  [/^(?:total |overall )?(?:height|h|alto|altura|h[öo]he|hauteur|h[öo]jd|hoogte)$/, 'h'],
+  [/^(?:total |overall )?(?:height|h|alto|altura|h[öo]he|hauteur|h[öo]jd|hoogte)(?: incl(?:uding|\.)? .*| with .*)?$/, 'h'],
   [/^(?:total |overall )?(?:length|l|largo|longitud|l[äa]nge|longueur|l[äa]ngd|lengte)$/, 'len'],
   [/^(?:diameter|diam\.?|ø|di[áa]metro|durchmesser|diam[èe]tre)$/, 'dia'],
+  // Corner sofas list each side ("Width left", "Width right").
+  [/^width (?:left|right)(?: side)?$/, 'side'],
 ];
 
 function num(s: string): number {
@@ -129,10 +131,11 @@ export function findMeasurements(text: string): Found {
   const unitLess: [Dim, number][] = [];
   let lastUnit: number | undefined;
   const set = (k: Dim, cmPerUnit: number | undefined, v: number) => {
+    if (k === 'side' && cmPerUnit !== undefined && v > 0) { dims.side = Math.max(dims.side ?? 0, v * cmPerUnit); return; }
     if (dims[k] !== undefined || !(v > 0)) return;
     if (cmPerUnit === undefined) unitLess.push([k, v]); else dims[k] = v * cmPerUnit;
   };
-  const labelled = new RegExp(String.raw`^\s*([\p{L}ø. ]{1,24}?)\s*[:=]?\s*(${NUM})\s*(${UNIT})?(?![\p{L}\d])`, 'iu');
+  const labelled = new RegExp(String.raw`^\s*([\p{L}ø. ]{1,40}?)\s*[:=]?\s*(${NUM})\s*(${UNIT})?(?![\p{L}\d])`, 'iu');
   const triple = new RegExp(String.raw`(?:([wdhl])\s*)?(${NUM})\s*(${UNIT})?\s*(?:([wdhl])\b)?\s*[x*]\s*(?:([wdhl])\s*)?(${NUM})\s*(${UNIT})?\s*(?:([wdhl])\b)?\s*[x*]\s*(?:([wdhl])\s*)?(${NUM})\s*(${UNIT})?\s*(?:([wdhl])\b)?`, 'i');
   lines.forEach((line, i) => {
     const t = triple.exec(line);
@@ -200,6 +203,24 @@ function colourAndFinish(text: string, type: FurnitureType): { color?: string; f
 
 const JUNK = /[£$€¥₹]|\breviews?\b|\bratings?\b|add to (cart|bag|basket)|\bin stock\b|article number|^\d+([.,]\d+)?$/i;
 
+/**
+ * Shop tables often copy as a label on one line and its value on the next
+ * ("Depth" / "88 cm"); put them back on one line.
+ */
+function joinTableRows(text: string): string {
+  const lines = text.split('\n');
+  const out: string[] = [];
+  const value = new RegExp(String.raw`^\s*(?:${NUM})\s*(?:${UNIT})?\s*$`, 'i');
+  for (let i = 0; i < lines.length; i++) {
+    const label = lines[i].trim();
+    if (label && /^[\p{L}][\p{L} .()-]{0,40}:?$/u.test(label) && value.test(lines[i + 1] ?? '')) {
+      out.push(`${label.replace(/:$/, '')}: ${lines[i + 1].trim()}`);
+      i++;
+    } else out.push(lines[i]);
+  }
+  return out.join('\n');
+}
+
 /** Read a product's name and measurements from text copied off a shop page. */
 export function specFromText(input: string): ProductSpec {
   const text = input
@@ -209,8 +230,8 @@ export function specFromText(input: string): ProductSpec {
     .replace(/[″”“]/g, '"').replace(/[′’]/g, "'")
     .replace(/×/g, 'x')
     .replace(/\r/g, '');
-  const { dims, lines: sizeLines } = findMeasurements(text);
-  const descLines = text.split('\n').map((l, i) => ({ l: l.trim(), i }))
+  const { dims, lines: sizeLines } = findMeasurements(joinTableRows(text));
+  const descLines = joinTableRows(text).split('\n').map((l, i) => ({ l: l.trim(), i }))
     .filter(({ l, i }) => l && !sizeLines.has(i) && !JUNK.test(l) && !/^[\p{L} ]+:/u.test(l)).map(({ l }) => l);
   if (!descLines.length && !Object.keys(dims).length) throw new Error('Paste the product name and its measurements.');
 
@@ -226,6 +247,7 @@ export function specFromText(input: string): ProductSpec {
   const base = CATALOG.find((c) => c.type === type) ?? CATALOG[CATALOG.length - 1];
   const { len, dia } = dims;
   let { w, d } = dims;
+  if (dims.side !== undefined) w ??= dims.side;
   const { h } = dims;
   if (dia !== undefined) { w ??= dia; d ??= dia; }
   if (len !== undefined) {
@@ -246,6 +268,9 @@ export function specFromText(input: string): ProductSpec {
   };
   if (look.finish) spec.finish = look.finish;
   if (dia !== undefined && type === 'table') spec.style = { top: 'round' };
+  if (dims.side !== undefined) {
+    spec.notes = [spec.notes, 'This is a corner piece: it is added as one straight side. Add a second one at a right angle for the other side.'].filter(Boolean).join(' ');
+  }
   return fitToType(spec, type);
 }
 

@@ -39,6 +39,29 @@ Seat height: 39 cm`);
     expect(table).toMatchObject({ type: 'table', w: 1.03, d: 1.03, h: 0.75, style: { top: 'round' }, sizeSource: 'listed' });
   });
 
+  it('reads tables copied with labels and values on separate lines (IKEA corner sofa)', () => {
+    const spec = specFromText(`EKTORP
+Corner sofa, 4-seat, Hallarp beige
+Armrest width
+24 cm
+Depth
+88 cm
+Height including back cushions
+88 cm
+Seat depth
+49 cm
+Seat height
+45 cm
+Width left
+243 cm
+Width right
+243 cm`);
+    expect(spec).toMatchObject({ type: 'sofa', name: 'EKTORP Corner sofa', w: 2.43, d: 0.88, h: 0.88, color: '#cdbb9c', sizeSource: 'listed' });
+    expect(spec.notes).toMatch(/corner piece/);
+    // Tab-separated rows work too.
+    expect(specFromText('Desk, white\nWidth\t120 cm\nDepth\t60 cm\nHeight\t75 cm')).toMatchObject({ type: 'desk', w: 1.2, d: 0.6, h: 0.75 });
+  });
+
   it('falls back to a labelled box with typical sizes', () => {
     const spec = specFromText('Grand piano, black lacquer');
     expect(spec).toMatchObject({ type: 'box', name: 'Grand piano, black lacquer', sizeSource: 'estimated', color: '#262626', finish: 'painted' });
