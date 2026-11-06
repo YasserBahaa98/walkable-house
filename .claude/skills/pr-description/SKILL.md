@@ -17,7 +17,7 @@ Create concise, reviewer-friendly GitHub PRs. Brevity matters: every line must e
 3. **Detect the change type** and include only the sections that apply (see below).
 4. **Gather evidence** (screenshots, metrics) per the sections below.
 5. **Check for a repo PR template** (`.github/pull_request_template.md`, `.github/PULL_REQUEST_TEMPLATE.md`, root, or `docs/`). If one exists, use its headings as the layout and fit the sections below into it.
-6. **Show the user the title + body for a quick review**, then create the PR with `gh pr create`. Push the branch first (`git push -u origin <branch>`). Open as a normal (ready) PR, not a draft, unless the user asks for a draft.
+6. **Show the user the title + body for a quick review**, then create the PR with `gh pr create`. Push the branch first (`git push -u origin <branch>`). Open as a normal (ready) PR, not a draft, unless the user asks for a draft. Then upload the screenshots to the `pr-assets` branch and add them to the body (see Screenshots).
 7. Return the PR URL.
 
 ## Title convention
@@ -86,7 +86,28 @@ Show the change visually. Pick the form that fits the project:
 - **CLI / backend / logs:** terminal output or log excerpts in a code block, before vs. after, when it demonstrates the change.
 - **Nothing visual to show** (pure refactor, config, internal logic): omit the section entirely rather than writing "N/A".
 
-Images must render in the PR. Hosting options, in order of preference: commit them to the PR branch under a clearly named folder (e.g. `docs/pr-assets/`) only if the user is fine with that; otherwise ask the user how they'd like to attach images. GitHub's CLI cannot upload images to PR bodies directly, so if hosting isn't possible, save the images to a local folder, tell the user the paths, and leave placeholders (`<!-- drag image here -->`) for them to drag in. Never fake or fabricate screenshots.
+Images must render in the PR. GitHub's CLI cannot upload images to PR bodies, so host them on the repo's **`pr-assets` branch** (see "Hosting screenshots" below). Never commit screenshots to the PR's own branch: they would end up in `main`. If the `pr-assets` branch can't be used (e.g. pushing is blocked, or the repo is private and the images don't render), save the images to a local folder, tell the user the paths, and leave placeholders (`<!-- drag image here -->`) for them to drag in. Never fake or fabricate screenshots.
+
+#### Hosting screenshots on the `pr-assets` branch
+
+`pr-assets` is a long-lived orphan branch that only hosts PR screenshots and is **never merged**. One folder per PR: `pr-<number>/`.
+
+1. Capture the screenshots (Playwright, `deviceScaleFactor: 2`) to a scratch folder. Use the same camera, viewport and data for before and after: build the base branch and the PR branch side by side (`git worktree add --detach <dir> origin/<base>`) and shoot both.
+2. Convert them to JPEG (quality ~85) so the branch stays small, and name them by what they show: `before.jpg`/`after.jpg`, or `ground-before.jpg` etc. when there are several pairs.
+3. Add them in a separate worktree so the working branch is untouched:
+   ```bash
+   git fetch origin pr-assets && git worktree add <tmp> pr-assets   # branch exists
+   git worktree add --orphan -b pr-assets <tmp>                       # first time only; add a README saying it is never merged
+   mkdir -p <tmp>/pr-<number> && cp <images> <tmp>/pr-<number>/
+   git -C <tmp> add -A && git -C <tmp> commit -m "Add screenshots for PR <number>"
+   git -C <tmp> push -u origin pr-assets
+   git worktree remove <tmp>
+   ```
+4. Link them pinned to that commit, so later uploads never change an older PR:
+   `![after](https://raw.githubusercontent.com/<owner>/<repo>/<commit-sha>/pr-<number>/after.jpg)`
+   Check that one URL returns `200 image/jpeg` before updating the PR.
+
+The PR number is only known after the PR exists, so open the PR first with the screenshots section left out, then add the images and update the body (`gh pr edit <number> --body-file <file>`).
 
 ### Risks
 Be explicit and honest. List each real risk as one line:
@@ -165,4 +186,11 @@ git push -u origin <branch>
 gh pr create --base <base> --title "<title>" --body-file <path-to-body.md>
 ```
 
-Write the body to a temp file and use `--body-file` to avoid shell-escaping problems. Do not add reviewers, labels, or assignees unless the user asks. Only create the PR when the user has asked for one.
+Write the body to a temp file and use `--body-file` to avoid shell-escaping problems.
+
+If `gh pr create` / `gh pr edit` fail because GitHub's GraphQL API is unavailable (some sandboxed environments), use the REST API instead:
+
+```bash
+gh api repos/<owner>/<repo>/pulls -f title="<title>" -f head=<branch> -f base=<base> -F body=@<path-to-body.md>   # create
+gh api -X PATCH repos/<owner>/<repo>/pulls/<number> -F body=@<path-to-body.md>                                 # update body
+``` Do not add reviewers, labels, or assignees unless the user asks. Only create the PR when the user has asked for one.
