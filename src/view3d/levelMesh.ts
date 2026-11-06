@@ -6,6 +6,7 @@ import { stairSections } from '../geometry/stairs';
 import { endExtensions, openingSpans, wallPieces } from '../geometry/walls';
 import { buildFurniture } from './furniture';
 import { buildRoof } from './roofMesh';
+import { mergeByMaterial } from './merge';
 import { floorMaterial, glassMaterial, solid, wallMaterial, worldUV } from './materials';
 
 export interface Pickable { kind: 'wall' | 'opening' | 'room' | 'item' | 'stair'; id: string; levelId: string }
@@ -97,6 +98,7 @@ export function buildLevel(level: Level, opt: LevelBuildOptions): THREE.Group {
   root.traverse((o) => {
     if (o instanceof THREE.Mesh && !opt.shadows) { o.castShadow = false; o.receiveShadow = false; }
   });
+  mergeByMaterial(root);
   return root;
 }
 
@@ -110,7 +112,12 @@ export function buildItem(it: Item, opt: Pick<LevelBuildOptions, 'model'>, level
       body.scale.set(it.w, it.h, it.d);
     }
   }
-  g.add(body ?? buildFurniture(it));
+  if (body) g.add(body);
+  else {
+    const f = buildFurniture(it);
+    mergeByMaterial(f, false);
+    g.add(f);
+  }
   g.position.set(it.x, it.elevation ?? 0, it.z);
   g.rotation.y = it.rot;
   g.traverse((o) => { if (o instanceof THREE.Mesh) { o.castShadow = true; o.receiveShadow = true; } });

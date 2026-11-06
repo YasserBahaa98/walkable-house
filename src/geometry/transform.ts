@@ -11,10 +11,13 @@ export function scaleLevel(p: Project, l: Level, o: Vec2, k: number) {
   for (const s of l.stairs) { const q = sp(s); s.x = q.x; s.z = q.z; s.length *= k; s.width *= k; }
   const ul = p.underlays[l.id];
   if (ul?.kind === 'cad') {
-    for (let i = 0; i < ul.segments.length; i += 2) {
-      const q = sp({ x: ul.segments[i], z: ul.segments[i + 1] });
-      ul.segments[i] = q.x; ul.segments[i + 1] = q.z;
+    // New array (not in place) so caches keyed on the array see the change.
+    const seg = ul.segments.slice();
+    for (let i = 0; i < seg.length; i += 2) {
+      const q = sp({ x: seg[i], z: seg[i + 1] });
+      seg[i] = q.x; seg[i + 1] = q.z;
     }
+    ul.segments = seg;
   } else if (ul?.kind === 'image') {
     const q = sp({ x: ul.x, z: ul.z });
     ul.x = q.x; ul.z = q.z; ul.scale *= k;

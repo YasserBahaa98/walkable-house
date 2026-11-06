@@ -3,6 +3,8 @@ import type { Level } from '../model/types';
 import { roofFaces, type V3, wallRect } from '../geometry/roof';
 import { roofMaterial, wallMaterial } from './materials';
 
+let gableMaterial: THREE.MeshStandardMaterial | null = null;
+
 /** Build a fan-triangulated polygon with UVs in metres along its own plane. */
 function polygonGeometry(polys: V3[][]): THREE.BufferGeometry {
   const pos: number[] = [], uv: number[] = [];
@@ -53,8 +55,8 @@ export function buildRoof(level: Level, wallHeight: number): THREE.Group | null 
     g.add(slab);
   }
   if (faces.gables.length) {
-    const gm = wallMaterial().clone();
-    gm.side = THREE.DoubleSide;
+    gableMaterial ??= Object.assign(wallMaterial().clone(), { side: THREE.DoubleSide });
+    const gm = gableMaterial;
     const gables = new THREE.Mesh(polygonGeometry(faces.gables), gm);
     gables.castShadow = gables.receiveShadow = true;
     g.add(gables);

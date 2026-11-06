@@ -33,6 +33,9 @@ export class App {
   private library = new ModelLibrary();
   private root: HTMLElement;
   private els: Record<string, HTMLElement> = {};
+  private levelsSig = '';
+  private layoutsSig = '';
+  private toolOptionsSig = '';
 
   constructor(private store: Store, mount: HTMLElement) {
     this.root = mount;
@@ -226,24 +229,31 @@ export class App {
     this.els.roof.setAttribute('aria-pressed', String(s.view.showRoof));
     this.els.roof.classList.toggle('on', s.view.showRoof);
 
-    // Level tabs, top level first like a building section.
-    this.els.levels.replaceChildren(...[...s.sortedLevels()].reverse().map((l) => h('button', {
-      type: 'button', role: 'tab', class: `level-tab${l.id === s.activeLevelId ? ' on' : ''}`, 'aria-selected': String(l.id === s.activeLevelId),
-      onclick: () => s.setLevel(l.id), title: `${l.name} · ${formatLength(l.elevation, s.view.units)}`,
-    }, l.name)));
-
-    // Layout chips
+    // Level tabs and layout chips: rebuilt only when their content changes (not on every drag step).
+    const levelsSig = JSON.stringify([s.activeLevelId, s.view.units, s.project.levels.map((l) => [l.id, l.name, l.elevation])]);
+    if (levelsSig !== this.levelsSig) {
+      this.levelsSig = levelsSig;
+      // Top level first, like a building section.
+      this.els.levels.replaceChildren(...[...s.sortedLevels()].reverse().map((l) => h('button', {
+        type: 'button', role: 'tab', class: `level-tab${l.id === s.activeLevelId ? ' on' : ''}`, 'aria-selected': String(l.id === s.activeLevelId),
+        onclick: () => s.setLevel(l.id), title: `${l.name} · ${formatLength(l.elevation, s.view.units)}`,
+      }, l.name)));
+    }
     const layouts = s.project.layouts;
-    this.els.layouts.replaceChildren(
-      ...layouts.map((l) => h('button', {
-        type: 'button', role: 'tab', class: `chip${l.id === s.project.activeLayoutId ? ' on' : ''}`, 'aria-selected': String(l.id === s.project.activeLayoutId),
-        onclick: () => s.switchLayout(l.id), title: 'Switch furniture layout',
-      }, l.name)),
-      h('button', {
-        type: 'button', class: 'chip chip-add', title: 'Save the current furniture as a layout to compare alternatives',
-        onclick: async () => { const n = await promptDialog('Save layout', 'Layout name', `Layout ${String.fromCharCode(65 + layouts.length)}`); if (n) s.saveLayout(n); },
-      }, icon('plus', 14), layouts.length ? '' : h('span', { class: 'hide-sm' }, 'Save layout')),
-    );
+    const layoutsSig = JSON.stringify([s.project.activeLayoutId, layouts.map((l) => [l.id, l.name])]);
+    if (layoutsSig !== this.layoutsSig) {
+      this.layoutsSig = layoutsSig;
+      this.els.layouts.replaceChildren(
+        ...layouts.map((l) => h('button', {
+          type: 'button', role: 'tab', class: `chip${l.id === s.project.activeLayoutId ? ' on' : ''}`, 'aria-selected': String(l.id === s.project.activeLayoutId),
+          onclick: () => s.switchLayout(l.id), title: 'Switch furniture layout',
+        }, l.name)),
+        h('button', {
+          type: 'button', class: 'chip chip-add', title: 'Save the current furniture as a layout to compare alternatives',
+          onclick: async () => { const n = await promptDialog('Save layout', 'Layout name', `Layout ${String.fromCharCode(65 + s.project.layouts.length)}`); if (n) s.saveLayout(n); },
+        }, icon('plus', 14), layouts.length ? '' : h('span', { class: 'hide-sm' }, 'Save layout')),
+      );
+    }
 
     // Tool options + hint
     const tool = TOOLS.find((t) => t.id === s.tool)!;
@@ -256,6 +266,9 @@ export class App {
     const box = this.els.toolOptions;
     const prefs = this.plan?.prefs;
     if (!prefs) return;
+    const sig = `${s.tool}|${s.view.units}`;
+    if (sig === this.toolOptionsSig) return;
+    this.toolOptionsSig = sig;
     const lengthInput = (label: string, get: () => number, set: (v: number) => void) => {
       const input = h('input', { class: 'input input-sm', value: String(formatLength(get(), s.view.units)), 'aria-label': label });
       input.addEventListener('change', () => {

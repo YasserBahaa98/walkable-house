@@ -4,7 +4,16 @@ import { VitePWA } from 'vite-plugin-pwa';
 export default defineConfig({
   base: './',
   worker: { format: 'es' },
-  build: { target: 'es2022', chunkSizeWarningLimit: 1500 },
+  build: {
+    target: 'es2022',
+    chunkSizeWarningLimit: 1500,
+    rolldownOptions: {
+      output: {
+        // three.js changes rarely: keep it in its own long-cached chunk.
+        advancedChunks: { groups: [{ name: 'three', test: /node_modules[\\/]three[\\/]build[\\/]/ }] },
+      },
+    },
+  },
   plugins: [
     VitePWA({
       registerType: 'autoUpdate',

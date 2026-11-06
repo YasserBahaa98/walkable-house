@@ -45,6 +45,17 @@ const shade = (hex: string, f: number) => {
 };
 
 const WOOD = '#8a6748';
+
+const screenMaterial = new THREE.MeshStandardMaterial({ color: '#0b0d10', roughness: 0.15, metalness: 0.2, emissive: '#101820', emissiveIntensity: 0.4 });
+const shadeCache = new Map<string, THREE.MeshStandardMaterial>();
+function lampShade(color: string): THREE.MeshStandardMaterial {
+  let m = shadeCache.get(color);
+  if (!m) {
+    m = new THREE.MeshStandardMaterial({ color, roughness: 0.9, emissive: color, emissiveIntensity: 0.25, side: THREE.DoubleSide });
+    shadeCache.set(color, m);
+  }
+  return m;
+}
 const METAL = '#2b2d30';
 const WHITE = '#f4f3f0';
 
@@ -147,8 +158,7 @@ const builders: Record<Item['type'], Builder> = {
   },
   tv: (g, { w, d, h, color }) => {
     add(g, solid(color, 0.3, 0.3), w, h, Math.max(0.03, d), 0, 0, 0, 0.005);
-    const scr = new THREE.MeshStandardMaterial({ color: '#0b0d10', roughness: 0.15, metalness: 0.2, emissive: '#101820', emissiveIntensity: 0.4 });
-    add(g, scr, w - 0.03, h - 0.03, 0.004, 0, 0.015, Math.max(0.03, d) / 2 + 0.002);
+    add(g, screenMaterial, w - 0.03, h - 0.03, 0.004, 0, 0.015, Math.max(0.03, d) / 2 + 0.002);
   },
   rug: (g, { w, d, h, color }) => {
     add(g, solid(color, 1), w, h, d, 0, 0, 0, 0.004);
@@ -173,8 +183,7 @@ const builders: Record<Item['type'], Builder> = {
     const metal = solid(METAL, 0.4, 0.7);
     cylinder(g, metal, w * 0.35, w * 0.4, 0.03, 0, 0, 0);
     cylinder(g, metal, 0.012, 0.012, h - 0.3, 0, 0.03, 0, 8);
-    const shadeMat = new THREE.MeshStandardMaterial({ color, roughness: 0.9, emissive: color, emissiveIntensity: 0.25, side: THREE.DoubleSide });
-    cylinder(g, shadeMat, w * 0.3, w * 0.45, 0.3, 0, h - 0.3, 0);
+    cylinder(g, lampShade(color), w * 0.3, w * 0.45, 0.3, 0, h - 0.3, 0);
   },
   toilet: (g, { w, d, h, color }) => {
     const p = solid(color, 0.2);

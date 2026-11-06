@@ -5,7 +5,7 @@ import { uid } from '../model/ids';
 import { itemObb } from '../geometry/checks';
 import { dist, normAngle, obbCorners, pointInObb, pointSegment, round3 as round, toWorld } from '../geometry/math';
 import { mix, withAlpha } from './colors';
-import { pointInRegion, regionAt, roomRegions } from '../geometry/rooms';
+import { pointInRegion, type Region, regionAt, roomRegions } from '../geometry/rooms';
 import { stairFootprint, stairSections } from '../geometry/stairs';
 import { endExtensions, JOIN_TOL, openingSpans, wallDir, wallLength, wallObb } from '../geometry/walls';
 
@@ -29,6 +29,42 @@ type Drag =
   | { kind: 'measure' };
 
 interface Theme { bg: string; grid: string; gridMajor: string; wall: string; text: string; muted: string; accent: string; door: string; window: string; room: string; item: string }
+
+// Paths are cached per (immutable) underlay array / room region, so redraws during
+// drags do not re-trace thousands of segments.
+const segmentPaths = new WeakMap<number[], Path2D>();
+function segmentsPath(s: number[]): Path2D {
+  let p = segmentPaths.get(s);
+  if (!p) {
+    p = new Path2D();
+    for (let i = 0; i < s.length; i += 4) { p.moveTo(s[i], s[i + 1]); p.lineTo(s[i + 2], s[i + 3]); }
+    segmentPaths.set(s, p);
+  }
+  return p;
+}
+const regionPaths = new WeakMap<Region, Path2D>();
+function regionPath(reg: Region): Path2D {
+  let p = regionPaths.get(reg);
+  if (!p) {
+    p = new Path2D();
+    for (const q of reg.rects) p.rect(q.x, q.z, q.w, q.d);
+    regionPaths.set(reg, p);
+  }
+  return p;
+}
+
+const widths = new Map<string, number>();
+/** Memoised text width (labels are re-measured on every redraw otherwise). */
+function textWidth(ctx: CanvasRenderingContext2D, text: string): number {
+  const key = `${ctx.font}|${text}`;
+  let w = widths.get(key);
+  if (w === undefined) {
+    if (widths.size > 4000) widths.clear();
+    w = ctx.measureText(text).width;
+    widths.set(key, w);
+  }
+  return w;
+}
 
 const FLOOR_TINT: Record<string, string> = {
   oak: '#e9d8bf', walnut: '#d5bfa6', tile: '#e2e4e4', marble: '#ecebe7', carpet: '#e0dbd3', concrete: '#d9d8d4',
@@ -656,10 +692,7 @@ export class PlanView {
       if (ul.kind === 'cad') {
         ctx.strokeStyle = th.muted;
         ctx.lineWidth = px;
-        ctx.beginPath();
-        const s = ul.segments;
-        for (let i = 0; i < s.length; i += 4) { ctx.moveTo(s[i], s[i + 1]); ctx.lineTo(s[i + 2], s[i + 3]); }
-        ctx.stroke();
+        ctx.stroke(segmentsPath(ul.segments));
       } else {
         const img = this.image(ul.dataUrl);
         if (img.complete && img.naturalWidth) ctx.drawImage(img, ul.x, ul.z, ul.width * ul.scale, ul.height * ul.scale);
@@ -689,7 +722,7 @@ export class PlanView {
       if (!reg?.enclosed) continue;
       const selected = sel?.kind === 'room' && sel.id === r.id;
       ctx.fillStyle = selected ? withAlpha(th.accent, 0.16) : withAlpha(FLOOR_TINT[r.floor] ?? '#e8e2d8', 0.75);
-      for (const q of reg.rects) ctx.fillRect(q.x, q.z, q.w, q.d);
+      ctx.fill(regionPath(reg));
     }
 
     // Walls (solid parts), then openings.
@@ -997,12 +1030,12 @@ export class PlanView {
     const [x, y] = this.toScreen(p);
     ctx.font = `500 ${size}px Inter, system-ui, sans-serif`;
     let t = s;
-    if (maxWidth && ctx.measureText(t).width > maxWidth - 6) {
-      while (t.length > 2 && ctx.measureText(t + '…').width > maxWidth - 6) t = t.slice(0, -1);
+    if (maxWidth && textWidth(ctx, t) > maxWidth - 6) {
+      while (t.length > 2 && textWidth(ctx, t + '…') > maxWidth - 6) t = t.slice(0, -1);
       t += '…';
       if (t.length <= 2) { ctx.restore(); return; }
     }
-    const w = ctx.measureText(t).width;
+    const w = textWidth(ctx, t);
     if (pill) {
       ctx.fillStyle = withAlpha(this.theme.bg, 0.92);
       roundRect(ctx, x - w / 2 - 5, y - size / 2 - 4, w + 10, size + 8, 6);
@@ -1022,9 +1055,9 @@ export class PlanView {
     ctx.setTransform(this.dpr, 0, 0, this.dpr, 0, 0);
     const [x, y] = this.toScreen(p);
     ctx.font = '600 12px Inter, system-ui, sans-serif';
-    const w1 = ctx.measureText(name).width;
+    const w1 = textWidth(ctx, name);
     ctx.font = '500 10px Inter, system-ui, sans-serif';
-    const w2 = ctx.measureText(sub).width;
+    const w2 = textWidth(ctx, sub);
     const w = Math.max(w1, w2) + 14;
     ctx.fillStyle = selected ? th.accent : withAlpha(th.bg, 0.88);
     roundRect(ctx, x - w / 2, y - 16, w, 32, 8);

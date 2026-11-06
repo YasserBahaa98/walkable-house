@@ -1,5 +1,4 @@
 import * as THREE from 'three';
-import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { uid } from '../model/ids';
 import { getModel, listModels, putModel, type StoredModel } from '../model/persistence';
 
@@ -16,7 +15,6 @@ export class ModelLibrary {
   private loading = new Map<string, Promise<void>>();
   private failed = new Set<string>();
   onLoaded: (id: string) => void = () => {};
-  private loader = new GLTFLoader();
 
   /** Normalised model if ready; triggers a background load otherwise. */
   get(id: string): THREE.Object3D | null {
@@ -97,6 +95,7 @@ export class ModelLibrary {
       return hit ?? url;
     });
     try {
+      const { GLTFLoader } = await import('three/addons/loaders/GLTFLoader.js');
       const loader = new GLTFLoader(manager);
       let result;
       try {
@@ -124,7 +123,8 @@ export class ModelLibrary {
   private async parse(m: StoredModel): Promise<ModelInfo> {
     let gltf;
     try {
-      gltf = await this.loader.parseAsync(m.data.slice(0), '');
+      const { GLTFLoader } = await import('three/addons/loaders/GLTFLoader.js');
+      gltf = await new GLTFLoader().parseAsync(m.data.slice(0), '');
     } catch (err) {
       throw new Error(`Could not read this model: ${err instanceof Error ? err.message : 'invalid glTF'}. Only .glb or self-contained .gltf files are supported.`, { cause: err });
     }

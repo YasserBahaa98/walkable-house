@@ -2,7 +2,7 @@ import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { PointerLockControls } from 'three/addons/controls/PointerLockControls.js';
 import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
-import type { Level, Selection } from '../model/types';
+import type { Level } from '../model/types';
 import type { ChangeKind, Store } from '../model/store';
 import { roomRegions } from '../geometry/rooms';
 import { levelBounds } from '../geometry/walls';
@@ -10,6 +10,9 @@ import { boundsValid } from '../geometry/math';
 import { buildItem, buildLevel, type Pickable } from './levelMesh';
 import { stairFootprint } from '../geometry/stairs';
 import { groundMaterial } from './materials';
+import { type PickBox, type PickRange, pickFromRanges } from './merge';
+
+const OUTLINE_MATERIAL = new THREE.LineBasicMaterial({ color: '#e8467c', depthTest: false, transparent: true });
 import type { ModelLibrary } from './models';
 import { buildWalkWorld, step, type WalkWorld, type Walker } from './walk';
 
@@ -380,33 +383,34 @@ export class View3D {
     this.outline?.geometry.dispose();
     this.outline = null;
     const sel = this.store.selection;
-    if (!sel) return;
-    const target = this.findPickable(sel);
-    if (!target) return;
-    const box = localBox(target);
+    const lv = this.levels.get(this.store.activeLevelId);
+    if (!sel || !lv) return;
+    let parent: THREE.Object3D;
+    let box: THREE.Box3;
+    let matrix: THREE.Matrix4 | null = null;
+    if (sel.kind === 'item') {
+      const group = lv.items.get(sel.id)?.group;
+      if (!group) return;
+      parent = group;
+      box = localBox(group);
+    } else {
+      // Static geometry is merged; use the bounds recorded before merging.
+      const boxes = lv.staticGroup?.userData.pickBoxes as Map<string, PickBox> | undefined;
+      const rec = boxes?.get(`${sel.kind}:${sel.id}`);
+      if (!rec || !lv.staticGroup) return;
+      parent = lv.staticGroup;
+      box = rec.box;
+      matrix = rec.matrix;
+    }
     if (box.isEmpty()) return;
     const size = box.getSize(new THREE.Vector3()).addScalar(0.04);
     const geo = new THREE.EdgesGeometry(new THREE.BoxGeometry(size.x, size.y, size.z));
-    const mat = new THREE.LineBasicMaterial({ color: '#e8467c', depthTest: false, transparent: true });
-    this.outline = new THREE.LineSegments(geo, mat);
+    geo.translate(...box.getCenter(new THREE.Vector3()).toArray());
+    this.outline = new THREE.LineSegments(geo, OUTLINE_MATERIAL);
     this.outline.renderOrder = 20;
-    box.getCenter(this.outline.position);
-    target.add(this.outline);
+    if (matrix) matrix.decompose(this.outline.position, this.outline.quaternion, this.outline.scale);
+    parent.add(this.outline);
     this.dirty = true;
-  }
-
-  private findPickable(sel: Selection): THREE.Object3D | null {
-    const lv = this.levels.get(this.store.activeLevelId);
-    if (!lv) return null;
-    if (sel.kind === 'item') return lv.items.get(sel.id)?.group ?? null;
-    let found: THREE.Object3D | null = null;
-    lv.group.traverse((o) => {
-      if (found) return;
-      const p = o.userData.pick as Pickable | undefined;
-      if (p && p.kind === sel.kind && p.id === sel.id) found = o;
-      if (sel.kind === 'opening' && o.userData.opening === sel.id && o.parent && o.parent.userData.opening !== sel.id) found = o;
-    });
-    return found;
   }
 
   // ---------------------------------------------------------------- input
@@ -523,16 +527,16 @@ export class View3D {
     ray.setFromCamera(ndc, this.camera);
     const hits = ray.intersectObjects(this.house.children, true).filter((h) => isVisible(h.object) && !(h.object instanceof THREE.LineSegments));
     for (const h of hits) {
-      let o: THREE.Object3D | null = h.object;
-      let openingId: string | undefined;
-      while (o) {
-        if (o.userData.opening && !openingId) openingId = o.userData.opening as string;
+      // Merged static geometry: map the hit triangle back to its wall, opening, room or stair.
+      const ranges = h.object.userData.pickRanges as PickRange[] | undefined;
+      if (ranges && h.faceIndex !== undefined && h.faceIndex !== null) {
+        const r = pickFromRanges(ranges, h.faceIndex);
+        if (r?.opening && r.pick?.kind === 'wall') return { pick: { kind: 'opening', id: r.opening, levelId: r.pick.levelId }, point: h.point };
+        return { pick: r?.pick ?? null, point: h.point };
+      }
+      for (let o: THREE.Object3D | null = h.object; o; o = o.parent) {
         const p = o.userData.pick as Pickable | undefined;
-        if (p) {
-          if (openingId && p.kind === 'wall') return { pick: { kind: 'opening', id: openingId, levelId: p.levelId }, point: h.point };
-          return { pick: p, point: h.point };
-        }
-        o = o.parent;
+        if (p) return { pick: p, point: h.point };
       }
       return { pick: null, point: h.point };
     }
