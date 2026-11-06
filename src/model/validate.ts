@@ -102,11 +102,12 @@ function parseRoom(r: Record<string, unknown>): Room {
   return {
     id: str(r.id) || uid('r'), name: str(r.name) || 'Room', seed: vec(r.seed),
     floor: FLOORS.includes(r.floor as FloorMaterial) ? (r.floor as FloorMaterial) : 'oak',
+    ...(typeof r.wallColor === 'string' && /^#[0-9a-f]{6}$/i.test(r.wallColor) ? { wallColor: r.wallColor } : {}),
   };
 }
 
 const TYPES: FurnitureType[] = ['bed', 'sofa', 'armchair', 'table', 'chair', 'desk', 'wardrobe', 'bookshelf', 'counter',
-  'fridge', 'tv', 'rug', 'plant', 'lamp', 'toilet', 'bathtub', 'sink', 'box', 'model'];
+  'fridge', 'tv', 'rug', 'plant', 'lamp', 'toilet', 'bathtub', 'sink', 'art', 'mirror', 'curtain', 'nightstand', 'vase', 'box', 'model'];
 export function parseItem(i: Record<string, unknown>): Item {
   const out: Item = {
     id: str(i.id) || uid('i'),

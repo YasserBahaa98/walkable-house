@@ -19,7 +19,7 @@ export function buildWalkWorld(levels: Level[]): WalkWorld {
       obbs: [
         ...solidObbs(level),
         ...level.items
-          .filter((it) => it.type !== 'rug' && (it.elevation ?? 0) < 0.5 && it.h > 0.25)
+          .filter((it) => it.type !== 'rug' && it.type !== 'curtain' && (it.elevation ?? 0) < 0.5 && it.h > 0.25)
           .map(itemObb),
       ],
       stairs: level.stairs.map((s) => ({ s, rise: stairRise(level, sorted[i + 1]) })),

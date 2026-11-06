@@ -143,3 +143,34 @@ export function regionAt(level: Level, p: Vec2): Region {
 export function pointInRegion(region: Region, x: number, z: number): boolean {
   return region.rects.some((r) => x >= r.x && x <= r.x + r.w && z >= r.z && z <= r.z + r.d);
 }
+
+/** A stretch of one side of a wall that faces a room: `side` 1 is wallDir's normal, -1 the other face. */
+export interface WallSpan { wall: Wall; side: 1 | -1; from: number; to: number }
+
+/** The parts of each wall face that border a room (for painting the room). */
+export function roomWallSpans(level: Level, region: Region, step = 0.05): WallSpan[] {
+  const out: WallSpan[] = [];
+  for (const w of level.walls) {
+    const len = Math.hypot(w.b.x - w.a.x, w.b.z - w.a.z);
+    if (len < 1e-6) continue;
+    const ux = (w.b.x - w.a.x) / len, uz = (w.b.z - w.a.z) / len;
+    const nx = uz, nz = -ux;
+    const off = w.thickness / 2 + 0.12;
+    for (const side of [1, -1] as const) {
+      let start: number | null = null;
+      const n = Math.ceil(len / step);
+      for (let i = 0; i <= n; i++) {
+        const t = Math.min(len, i * step);
+        const inside = pointInRegion(region, w.a.x + ux * t + nx * side * off, w.a.z + uz * t + nz * side * off);
+        if (inside && start === null) start = t;
+        if ((!inside || i === n) && start !== null) {
+          const end = inside ? len : t;
+          // Run on a little so the paint meets the walls at the corners.
+          out.push({ wall: w, side, from: start - step * 2, to: end + step });
+          start = null;
+        }
+      }
+    }
+  }
+  return out;
+}

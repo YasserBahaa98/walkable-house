@@ -38,11 +38,14 @@ export interface Room {
   /** Any point inside the room. The room's shape is derived from the walls. */
   seed: Vec2;
   floor: FloorMaterial;
+  /** Paint for the faces of the walls around this room (overrides the walls' own colour on this side). */
+  wallColor?: string;
 }
 
 export type FurnitureType =
   | 'bed' | 'sofa' | 'armchair' | 'table' | 'chair' | 'desk' | 'wardrobe' | 'bookshelf'
   | 'counter' | 'fridge' | 'tv' | 'rug' | 'plant' | 'lamp' | 'toilet' | 'bathtub' | 'sink'
+  | 'art' | 'mirror' | 'curtain' | 'nightstand' | 'vase'
   | 'box' | 'model';
 
 export interface Item {

@@ -12,8 +12,8 @@ export interface Issue {
 
 export const itemObb = (i: Item): Obb => ({ cx: i.x, cz: i.z, hx: i.w / 2, hz: i.d / 2, rot: i.rot });
 
-/** Furniture that sits on the floor and can physically collide. */
-const solidItem = (i: Item) => i.type !== 'rug' && (i.elevation ?? 0) < 1.2 && i.h > 0.05;
+/** Furniture that sits on the floor and can physically collide (rugs and curtains are soft). */
+const solidItem = (i: Item) => i.type !== 'rug' && i.type !== 'curtain' && (i.elevation ?? 0) < 1.2 && i.h > 0.05;
 
 const TOL = 0.02;
 const DOOR_CLEARANCE = 0.75;

@@ -273,6 +273,11 @@ select.input { padding-right: 4px; }
 .swatch { display: flex; flex-direction: column; align-items: center; gap: 4px; padding: 6px; border-radius: var(--radius-sm); border: 2px solid transparent; background: var(--surface-2); cursor: pointer; font-size: 12px; }
 .swatch img { width: 100%; height: 38px; object-fit: cover; border-radius: 5px; }
 .swatch[aria-checked='true'] { border-color: var(--accent); }
+.paint-swatches { display: flex; flex-wrap: wrap; gap: 6px; }
+.paint-swatch { width: 30px; height: 30px; border-radius: 50%; border: 1px solid var(--border); cursor: pointer; padding: 0; box-shadow: inset 0 0 0 2px var(--surface); }
+.paint-swatch[aria-checked='true'] { outline: 2px solid var(--accent); outline-offset: 2px; }
+.paint-swatch.none { background: linear-gradient(135deg, var(--surface-2) 45%, var(--muted) 45%, var(--muted) 55%, var(--surface-2) 55%); }
+@media (pointer: coarse) { .paint-swatch { width: 38px; height: 38px; } }
 
 .catalog { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
 .catalog-item {

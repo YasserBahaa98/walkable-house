@@ -20,12 +20,17 @@ macOS, Linux, tablets and phones. Your work is saved locally; nothing is uploade
 - **Projects** (`.walkhouse.json`) and **3D models** for custom furniture — `.glb`, a `.gltf` with its `.bin`/texture files, or a `.zip` — packed into the browser library.
 
 **Edit (2D plan)**
-- Tools: select/move, draw walls (chained, with angle/endpoint/wall/grid snapping and live length), doors, windows, room detection, stairs, measure, calibrate.
+- Tools: select/move, draw walls (chained, with angle/endpoint/wall/grid snapping and live length), doors, windows, rooms (click inside walls to make a room), stairs, measure, calibrate.
 - Drag wall ends (connected walls follow), drag whole walls, curve walls into arcs, slide doors/windows along walls, rotate furniture with a handle, snap furniture flush against walls.
 - Straight, L-shaped and U-shaped stairs with landings; flat, gable and hip roofs with pitch, overhang, ridge direction and covering.
 - Inspector for every object with free-form length input (`240cm`, `8' 6"`, `1200 mm`…), metric or imperial units.
 - Multiple levels, duplicate level, the level below shown as a ghost, reference drawing underlay with opacity.
 - Undo/redo for everything (drags count as one step), autosave to IndexedDB.
+
+**Furnish & decorate**
+- **Furnish room**: fills a room with furniture that suits its name and size (bedroom, living room, kitchen, dining room, bathroom, WC, study, hall or landing; names in several languages). Beds and sofas go against walls facing into the room, the TV faces the sofa, chairs sit at tables and desks, plants go in corners, and nothing blocks doors, stairs or windows. Press again for another layout; **Furnish empty rooms** does a whole level.
+- **Wall paint** per room (presets or any colour), painted only on the faces of the walls around that room. Floor finish per room.
+- Decor: wall art, mirrors, curtains, vases with flowers, nightstands, side tables, rugs, plants and lamps.
 
 **Experience (3D)**
 - Orbit view showing the active level and those below, optional cutaway walls.
@@ -86,7 +91,8 @@ you import a DWG.
 | Import a plan | **Import** in the top bar, `Ctrl+O`, or drop a file anywhere |
 | Draw walls | `W`, click corners, double-click / `Enter` / right-click to finish |
 | Doors, windows | `D` / `N`, click a wall |
-| Create a room | `R`, click inside an area enclosed by walls (doors count as walls) |
+| Create a room | **Add room** (`R`), click inside an area enclosed by walls (doors count as walls) |
+| Furnish / paint a room | Select the room → **Furnish & decorate** (Inspect tab) |
 | Stairs | `S`, click; stairs lead to the level above |
 | Measure | `M`, drag |
 | Move / rotate furniture | drag; rotate handle, `Q` / `E` (`Shift` = 90°), arrow keys to nudge |
