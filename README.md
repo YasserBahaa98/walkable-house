@@ -49,19 +49,15 @@ npm run dev
 
 Open the printed URL (default http://localhost:5173). The first run offers a demo house, an import, or an empty project.
 
-### Hosted link (GitHub Pages)
+### Hosted app
 
-The repository includes `.github/workflows/deploy.yml`, which builds and publishes the app to GitHub Pages
-on every push to `main` — but only once Pages is enabled (until then it skips with a notice):
+**Live: https://yasserbahaa98.github.io/walkable-house/**
 
-1. GitHub Pages for a **private** repository needs a paid GitHub plan; on a free plan, make the repository
-   public (Settings → General → Danger zone → Change visibility) or use another static host (below).
-2. Settings → Pages → Build and deployment → **Source: GitHub Actions**.
-3. Re-run the "Deploy to GitHub Pages" workflow (Actions tab). The app is then live at
-   `https://<user>.github.io/walkable-house/`.
+`.github/workflows/deploy.yml` rebuilds the app and publishes it to the `gh-pages` branch on every push to
+`main`; GitHub Pages serves that branch (Settings → Pages → Deploy from a branch → `gh-pages`). Forks get their
+own copy at `https://<user>.github.io/walkable-house/` after enabling Pages the same way.
 
-Any static host works too: run `npm run build` and upload `dist/` (for example by dragging the folder onto
-Netlify Drop or Cloudflare Pages). HTTPS is required for installation and offline use.
+Any other static HTTPS host works too: run `npm run build` and upload `dist/`.
 
 ### Install it like an app
 
