@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { obbOverlap, pushCircle, segmentObb, toLocal, toWorld } from '../src/geometry/math';
-import { endExtensions, openingSpans, solidObbs, splitWall, wallPieces } from '../src/geometry/walls';
+import { curveWall, endExtensions, openingSpans, solidObbs, splitWall, wallLength, wallPieces } from '../src/geometry/walls';
 import { roomRegions, regionAt } from '../src/geometry/rooms';
 import { checkLevel } from '../src/geometry/checks';
 import { stairHeightAt, stairObb, stairSections, stepCount } from '../src/geometry/stairs';
@@ -71,6 +71,40 @@ describe('walls', () => {
     expect(ids).toEqual([level.walls[0].id, 'new']);
     expect(d.wallId).toBe('new');
     expect(d.offset).toBeCloseTo(1);
+  });
+});
+
+describe('curved walls', () => {
+  it('bends a wall into an arc through the requested bulge, keeping ends and doors', () => {
+    const level = boxLevel();
+    const bottom = level.walls[0]; // (0,0) -> (4,0); left normal points to -Z (outside)
+    level.openings.push(door(bottom, 2, 0.8));
+    const before = roomRegions(level).get('r1')!.area;
+    const ids = curveWall(level, bottom.id, 1, () => `c${Math.random()}`)!;
+    expect(ids.length).toBeGreaterThanOrEqual(6);
+    const segs = ids.map((id) => level.walls.find((w) => w.id === id)!);
+    expect(segs[0].a).toEqual({ x: 0, z: 0 });
+    expect(segs[segs.length - 1].b).toEqual({ x: 4, z: 0 });
+    // The apex sits 1 m out from the chord.
+    const minZ = Math.min(...segs.flatMap((w) => [w.a.z, w.b.z]));
+    expect(minZ).toBeCloseTo(-1, 1);
+    // Consecutive segments stay connected.
+    for (let i = 1; i < segs.length; i++) expect(segs[i].a).toEqual(segs[i - 1].b);
+    // The door moved onto a middle segment and still fits.
+    const d = level.openings[0];
+    const host = level.walls.find((w) => w.id === d.wallId)!;
+    expect(ids.indexOf(host.id)).toBeGreaterThan(0);
+    expect(d.offset).toBeLessThanOrEqual(wallLength(host));
+    // Room is still enclosed and got bigger.
+    const after = roomRegions(level).get('r1')!;
+    expect(after.enclosed).toBe(true);
+    expect(after.area).toBeGreaterThan(before + 2);
+  });
+
+  it('rejects impossible bulges', () => {
+    const level = boxLevel();
+    expect(curveWall(level, level.walls[0].id, 3, () => 'x')).toBeNull();
+    expect(curveWall(level, level.walls[0].id, 0, () => 'x')).toBeNull();
   });
 });
 

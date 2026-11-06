@@ -149,3 +149,48 @@ export function splitWall(level: Level, wallId: string, t: number, newId: () => 
   level.walls.splice(level.walls.indexOf(w) + 1, 0, second);
   return [w.id, second.id];
 }
+
+/**
+ * Bend a wall into a circular arc made of short straight segments.
+ * `sagitta` is the arc's bulge at the middle (positive: towards the wall's
+ * left normal). Endpoints stay put so connections are preserved; openings
+ * move to the segment that contains them. Returns the new wall ids.
+ */
+export function curveWall(level: Level, wallId: string, sagitta: number, newId: () => string): string[] | null {
+  const w = level.walls.find((x) => x.id === wallId);
+  if (!w || Math.abs(sagitta) < 0.01) return null;
+  const c = wallLength(w);
+  if (c < 0.3 || Math.abs(sagitta) > c / 2) return null;
+  const { nx, nz } = wallDir(w);
+  const mid = { x: (w.a.x + w.b.x) / 2, z: (w.a.z + w.b.z) / 2 };
+  const s = sagitta;
+  const R = (c * c / 4 + s * s) / (2 * Math.abs(s));
+  const ctr = { x: mid.x + nx * (s - Math.sign(s) * R), z: mid.z + nz * (s - Math.sign(s) * R) };
+  const a0 = Math.atan2(w.a.z - ctr.z, w.a.x - ctr.x);
+  let sweep = 4 * Math.atan((2 * Math.abs(s)) / c);
+  // Pick the sweep direction that passes through the arc's middle point.
+  const apex = { x: mid.x + nx * s, z: mid.z + nz * s };
+  const at = (t: number, sw: number) => ({ x: ctr.x + R * Math.cos(a0 + sw * t), z: ctr.z + R * Math.sin(a0 + sw * t) });
+  const m1 = at(0.5, sweep), m2 = at(0.5, -sweep);
+  if (Math.hypot(m2.x - apex.x, m2.z - apex.z) < Math.hypot(m1.x - apex.x, m1.z - apex.z)) sweep = -sweep;
+  const arcLen = Math.abs(sweep) * R;
+  const n = Math.max(6, Math.min(32, Math.round(arcLen / 0.35)));
+  const pts = Array.from({ length: n + 1 }, (_, i) => (i === 0 ? { ...w.a } : i === n ? { ...w.b } : at(i / n, sweep)));
+  const round = (v: number) => Math.round(v * 1000) / 1000;
+  const segs: Wall[] = [];
+  for (let i = 0; i < n; i++) {
+    segs.push({ ...w, id: i === 0 ? w.id : newId(), a: { x: round(pts[i].x), z: round(pts[i].z) }, b: { x: round(pts[i + 1].x), z: round(pts[i + 1].z) } });
+  }
+  // Move openings: map their position along the old chord to arc length.
+  const segLen = segs.map(wallLength);
+  for (const o of level.openings) {
+    if (o.wallId !== w.id) continue;
+    let pos = (o.offset / c) * segLen.reduce((a, b) => a + b, 0);
+    let k = 0;
+    while (k < n - 1 && pos > segLen[k]) { pos -= segLen[k]; k++; }
+    o.wallId = segs[k].id;
+    o.offset = Math.min(Math.max(pos, o.width / 2), segLen[k] - o.width / 2);
+  }
+  level.walls.splice(level.walls.indexOf(w), 1, ...segs);
+  return segs.map((x) => x.id);
+}

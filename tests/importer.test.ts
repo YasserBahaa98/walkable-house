@@ -67,6 +67,34 @@ describe('flattenDatabase', () => {
   });
 });
 
+describe('curved CAD walls', () => {
+  it('imports concentric arcs as a chain of curved wall segments', () => {
+    const d = flattenDatabase({
+      entities: [
+        { type: 'ARC', layer: 'WALL', center: { x: 0, y: 0 }, radius: 3.1, startAngle: 0, endAngle: Math.PI / 2 },
+        { type: 'ARC', layer: 'WALL', center: { x: 0, y: 0 }, radius: 2.9, startAngle: 0, endAngle: Math.PI / 2 },
+      ],
+    }, 'arc.dxf');
+    const lines = d.segments.map((sg) => {
+      const a = { x: sg.x1, z: -sg.y1 }, b = { x: sg.x2, z: -sg.y2 };
+      const len = Math.hypot(b.x - a.x, b.z - a.z);
+      let ang = Math.atan2((b.z - a.z) / len, (b.x - a.x) / len);
+      if (ang < 0) ang += Math.PI;
+      if (ang >= Math.PI - 1e-9) ang -= Math.PI;
+      return { a, b, len, ux: (b.x - a.x) / len, uz: (b.z - a.z) / len, ang, layer: sg.layer };
+    });
+    const walls = pairWalls(lines, { minThickness: 0.07, maxThickness: 0.6 });
+    expect(walls.length).toBeGreaterThanOrEqual(6);
+    walls.forEach((w) => {
+      expect(w.thickness).toBeCloseTo(0.2, 1);
+      // Centreline segments sit on the 3 m radius.
+      const r = Math.hypot((w.a.x + w.b.x) / 2, (w.a.z + w.b.z) / 2);
+      expect(r).toBeGreaterThan(2.95);
+      expect(r).toBeLessThan(3.05);
+    });
+  });
+});
+
 describe('wall extraction', () => {
   it('pairs double lines into centreline walls with thickness', () => {
     const lines = roomSegments().map((s) => {

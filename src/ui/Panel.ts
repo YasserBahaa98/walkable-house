@@ -6,7 +6,7 @@ import { formatArea, formatLength, parseLength, toUnit, unitLabel } from '../mod
 import { checkLevel, type Issue } from '../geometry/checks';
 import { roomRegions } from '../geometry/rooms';
 import { stairRise, stepCount } from '../geometry/stairs';
-import { splitWall, wallLength } from '../geometry/walls';
+import { curveWall, splitWall, wallLength } from '../geometry/walls';
 import { floorSwatch } from '../view3d/materials';
 import type { ModelLibrary } from '../view3d/models';
 import { download, h, icon, iconButton, pickFile, slug } from './dom';
@@ -196,6 +196,7 @@ export class Panel {
             class: 'btn', type: 'button', disabled: len < 0.3,
             onclick: () => { s.mutate((_p, l) => { splitWall(l, w.id, len / 2, () => uid('w')); }); s.select(null); toast('Wall split in two.'); },
           }, icon('flip', 16), 'Split'),
+          h('button', { class: 'btn', type: 'button', disabled: len < 0.3, onclick: () => this.curve(w) }, icon('orbit', 16), 'Curve…'),
         ),
         h('p', { class: 'muted small' }, 'Tip: drag the square handles in the plan to move wall ends; connected walls follow.'),
       ]),
@@ -482,6 +483,19 @@ export class Panel {
     this.store.mutate((_p, l) => { l.stairs.push(st); });
     this.store.select({ kind: 'stair', id: st.id });
     this.setTab('inspect');
+  }
+
+  private async curve(w: Wall) {
+    const s = this.store;
+    const len = wallLength(w);
+    const answer = await promptDialog('Curve wall', 'How far should the middle bulge out?', formatLength(Math.min(1, len / 4), s.view.units),
+      `Up to ${formatLength(len / 2, s.view.units)}. Use a negative value to bulge to the other side. The wall becomes a smooth arc of short segments.`);
+    if (!answer) return;
+    const sag = parseLength(answer, s.view.units);
+    if (sag === null || Math.abs(sag) < 0.01 || Math.abs(sag) > len / 2) { toast(`Enter a bulge between 1 cm and ${formatLength(len / 2, s.view.units)}.`, 'error'); return; }
+    let ok = false;
+    s.mutate((_p, l) => { ok = !!curveWall(l, w.id, sag, () => uid('w')); });
+    if (ok) { s.select(null); toast('Wall curved. Undo with Ctrl+Z.', 'success'); }
   }
 
   private addOpeningAt(w: Wall, kind: 'door' | 'window') {
