@@ -122,4 +122,28 @@ test.describe('Walkable House', () => {
     await page.getByRole('dialog', { name: 'Open project' }).getByRole('button', { name: 'Open' }).click();
     await expect(page.locator('.project-name')).toHaveValue('Demo house');
   });
+
+  test('imports a multi-file glTF model and a zipped model', async ({ page }) => {
+    await freshStart(page);
+    await page.getByRole('button', { name: 'Explore demo' }).click();
+    const fixture = (n: string) => fileURLToPath(new URL(`../tests/fixtures/${n}`, import.meta.url));
+    let chooser = page.waitForEvent('filechooser');
+    await page.getByRole('button', { name: /Import/ }).first().click();
+    await (await chooser).setFiles([fixture('box.gltf'), fixture('box.bin')]);
+    await expect(page.locator('.toast-success').filter({ hasText: 'Added model “box”' })).toBeVisible();
+    await expect(page.locator('.inspector-title')).toHaveText('box');
+    // Size comes from the model (0.8 × 0.6 m footprint).
+    await expect(page.getByRole('textbox', { name: 'Width (m)' })).toHaveValue('0.8');
+
+    chooser = page.waitForEvent('filechooser');
+    await page.getByRole('button', { name: /Import/ }).first().click();
+    await (await chooser).setFiles(fixture('box-model.zip'));
+    await expect(page.locator('.toast-success').filter({ hasText: 'Added model “box”' }).last()).toBeVisible();
+
+    // A .gltf without its .bin explains what is missing.
+    chooser = page.waitForEvent('filechooser');
+    await page.getByRole('button', { name: /Import/ }).first().click();
+    await (await chooser).setFiles(fixture('box.gltf'));
+    await expect(page.locator('.toast-error')).toContainText('Missing files: box.bin');
+  });
 });

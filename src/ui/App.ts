@@ -8,7 +8,7 @@ import { dist } from '../geometry/math';
 import { PlanView } from '../view2d/PlanView';
 import { View3D } from '../view3d/View3D';
 import { ModelLibrary } from '../view3d/models';
-import { download, h, icon, iconButton, pickFile, slug } from './dom';
+import { download, h, icon, iconButton, pickFiles, slug } from './dom';
 import type { IconName } from './icons';
 import { busy, confirmDialog, dialog, promptDialog, toast } from './feedback';
 import { Panel } from './Panel';
@@ -23,7 +23,7 @@ const TOOLS: { id: Tool; label: string; icon: IconName; key: string; hint: strin
   { id: 'measure', label: 'Measure', icon: 'ruler', key: 'M', hint: 'Drag to measure a distance · snaps to wall corners' },
 ];
 
-const FILE_ACCEPT = '.dwg,.dxf,.json,.walkhouse,.png,.jpg,.jpeg,.webp,.glb,.gltf';
+const FILE_ACCEPT = '.dwg,.dxf,.json,.walkhouse,.png,.jpg,.jpeg,.webp,.glb,.gltf,.bin,.zip';
 
 export class App {
   private plan!: PlanView;
@@ -341,7 +341,7 @@ export class App {
   // ---------------------------------------------------------------- files
   private bindDrop() {
     let depth = 0;
-    const overlay = h('div', { class: 'drop-overlay', hidden: true }, h('div', {}, icon('upload', 32), h('p', {}, 'Drop a DWG, DXF, image, project or GLB file')));
+    const overlay = h('div', { class: 'drop-overlay', hidden: true }, h('div', {}, icon('upload', 32), h('p', {}, 'Drop a DWG, DXF, image, project or 3D model')));
     document.body.append(overlay);
     window.addEventListener('dragenter', (e) => { if (e.dataTransfer?.types.includes('Files')) { depth++; overlay.hidden = false; } });
     window.addEventListener('dragleave', () => { depth = Math.max(0, depth - 1); if (!depth) overlay.hidden = true; });
@@ -350,14 +350,24 @@ export class App {
       e.preventDefault();
       depth = 0;
       overlay.hidden = true;
-      const f = e.dataTransfer?.files?.[0];
-      if (f) void this.importFile(f);
+      const files = [...(e.dataTransfer?.files ?? [])];
+      if (files.length) void this.importFiles(files);
     });
   }
 
   async openFile() {
-    const f = await pickFile(FILE_ACCEPT);
-    if (f) await this.importFile(f);
+    const files = await pickFiles(FILE_ACCEPT);
+    if (files.length) await this.importFiles(files);
+  }
+
+  /** Several files at once are a multi-file 3D model (.gltf + .bin + textures). */
+  async importFiles(files: File[]) {
+    if (files.length === 1) return this.importFile(files[0]);
+    if (files.some((f) => /\.(gltf|glb|zip)$/i.test(f.name))) {
+      try { await this.importModel(files); } catch (err) { toast(err instanceof Error ? err.message : 'Import failed.', 'error'); }
+      return;
+    }
+    toast('Import one plan at a time. Multiple files are only supported for a .gltf model with its .bin and textures.', 'error');
   }
 
   /** Route a file to the right importer based on its extension. */
@@ -367,8 +377,8 @@ export class App {
       if (ext === 'dwg' || ext === 'dxf') await this.importCad(file);
       else if (ext === 'json' || ext === 'walkhouse') await this.importProject(file);
       else if (['png', 'jpg', 'jpeg', 'webp'].includes(ext)) await this.importImage(file);
-      else if (ext === 'glb' || ext === 'gltf') await this.importModel(file);
-      else toast(`Unsupported file type “.${ext}”. Use DWG, DXF, PNG/JPG, JSON or GLB.`, 'error');
+      else if (ext === 'glb' || ext === 'gltf' || ext === 'zip') await this.importModel([file]);
+      else toast(`Unsupported file type “.${ext}”. Use DWG, DXF, PNG/JPG, JSON, GLB/glTF or ZIP.`, 'error');
     } catch (err) {
       console.error(err);
       toast(err instanceof Error ? err.message : 'Import failed.', 'error');
@@ -456,8 +466,10 @@ export class App {
     toast('Image placed under the plan. Trace walls with the wall tool (W); use Calibrate in the Inspect tab for exact scale.', 'success', 7000);
   }
 
-  private async importModel(file: File) {
-    const info = await this.library.importFile(file);
+  private async importModel(files: File[]) {
+    const done = busy('Importing 3D model…');
+    let info;
+    try { info = await this.library.importFiles(files); } finally { done(); }
     const c = this.plan.viewCenter();
     const dim = (v: number) => Math.min(20, Math.max(0.05, Math.round(v * 1000) / 1000));
     const it: Item = { id: uid('i'), type: 'model', name: info.name, x: c.x, z: c.z, rot: 0, w: dim(info.size.x), d: dim(info.size.z), h: dim(info.size.y), color: '#c4bdb3', modelId: info.id };

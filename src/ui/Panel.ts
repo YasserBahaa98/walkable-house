@@ -9,7 +9,7 @@ import { stairRise, stepCount } from '../geometry/stairs';
 import { curveWall, splitWall, wallLength } from '../geometry/walls';
 import { floorSwatch } from '../view3d/materials';
 import type { ModelLibrary } from '../view3d/models';
-import { download, h, icon, iconButton, pickFile, slug } from './dom';
+import { download, h, icon, iconButton, pickFiles, slug } from './dom';
 import { confirmDialog, promptDialog, toast } from './feedback';
 
 type Tab = 'inspect' | 'library' | 'report' | 'view';
@@ -354,7 +354,7 @@ export class Panel {
     nodes.push(section('Structure', [h('div', { class: 'btn-row' },
       h('button', { class: 'btn', type: 'button', onclick: () => this.addStair() }, icon('stairs', 16), 'Add stairs'))]));
     nodes.push(section('Your 3D models', [
-      h('p', { class: 'muted small' }, 'Import furniture as .glb (or self-contained .gltf). Models are stored in this browser and work offline.'),
+      h('p', { class: 'muted small' }, 'Import furniture as .glb, a .gltf with its .bin and texture files, or a .zip. Models are stored in this browser and work offline.'),
       h('div', { class: 'btn-row' }, h('button', { class: 'btn', type: 'button', onclick: () => this.importModel() }, icon('upload', 16), 'Import model…')),
       this.models.length ? h('div', { class: 'catalog' }, ...this.models.map((m) => h('button', {
         class: 'catalog-item', type: 'button', onclick: () => this.addModel(m.id, m.name),
@@ -465,10 +465,10 @@ export class Panel {
   }
 
   private async importModel() {
-    const file = await pickFile('.glb,.gltf,model/gltf-binary,model/gltf+json');
-    if (!file) return;
+    const files = await pickFiles('.glb,.gltf,.bin,.zip,.png,.jpg,.jpeg,.webp,model/gltf-binary,model/gltf+json');
+    if (!files.length) return;
     try {
-      const info = await this.library.importFile(file);
+      const info = await this.library.importFiles(files);
       this.models = await this.library.list();
       this.addModel(info.id, info.name);
       this.schedule(true);

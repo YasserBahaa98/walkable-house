@@ -33,6 +33,7 @@
     "node": ">=20"
   },
   "dependencies": {
-    "dxf-parser": "^1.1.2"
+    "dxf-parser": "^1.1.2",
+    "fflate": "^0.8.3"
   }
 }
