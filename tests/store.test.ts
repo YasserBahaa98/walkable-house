@@ -1,9 +1,24 @@
 import { describe, expect, it, vi } from 'vitest';
-import { Store } from '../src/model/store';
+import { emptyLevelAbove, Store } from '../src/model/store';
 import { sampleProject } from '../src/model/sample';
 import { parseProject } from '../src/model/validate';
 
 describe('Store', () => {
+  it('moves the roof up to a newly added top level, as one undo step', () => {
+    const s = new Store(sampleProject());
+    const top = s.sortedLevels().at(-1)!;
+    const roof = top.roof;
+    expect(roof).toBeDefined();
+    const id = s.addLevelOnTop(emptyLevelAbove(s.project.levels.length));
+    expect(s.activeLevelId).toBe(id);
+    expect(s.level.roof).toEqual(roof);
+    expect(s.project.levels.find((l) => l.id === top.id)!.roof).toBeUndefined();
+    expect(s.level.elevation).toBeGreaterThan(top.elevation + top.height);
+    s.undo();
+    expect(s.project.levels).toHaveLength(2);
+    expect(s.project.levels.find((l) => l.id === top.id)!.roof).toEqual(roof);
+  });
+
   it('undoes and redoes mutations', () => {
     const s = new Store(sampleProject());
     const before = s.level.items.length;

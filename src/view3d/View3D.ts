@@ -223,7 +223,8 @@ export class View3D {
         doorsOpen: view.doorsOpen,
         ceiling: walking && !above,
         // Roofs: always when walking; in orbit for levels below the active one, and on demand for the active level.
-        roof: walking || level.elevation < activeElev - 1e-6 || (isActive && view.showRoof && !view.cutaway),
+        // A roof covered by another storey would cut through it, so it is hidden.
+        roof: !above?.walls.length && (walking || level.elevation < activeElev - 1e-6 || (isActive && view.showRoof && !view.cutaway)),
         holes: below ? below.stairs.flatMap(stairFootprint) : [],
         model: (id: string) => this.models.get(id),
         shadows: view.quality === 'high',

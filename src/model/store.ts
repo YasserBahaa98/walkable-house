@@ -88,6 +88,22 @@ export class Store {
   }
   sortedLevels(): Level[] { return [...this.project.levels].sort((a, b) => a.elevation - b.elevation); }
 
+  /**
+   * Add a storey on top of the house (one undo step) and make it active. The
+   * roof moves up from the old top level, so it never cuts through the new one.
+   */
+  addLevelOnTop(make: (top: Level, id: string) => Omit<Level, 'id'>): string {
+    const id = uid('L');
+    this.mutate((p) => {
+      const top = [...p.levels].sort((a, b) => a.elevation - b.elevation).at(-1)!;
+      const level: Level = { ...make(top, id), id };
+      if (top.roof && !level.roof) { level.roof = top.roof; delete top.roof; }
+      p.levels.push(level);
+    });
+    this.setLevel(id);
+    return id;
+  }
+
   find(sel: Selection | null = this.selection, level = this.level): Wall | Opening | Room | Item | Stair | undefined {
     if (!sel) return undefined;
     const list: { id: string }[] = {
@@ -291,4 +307,12 @@ function underlaySignature(u: Project['underlays']): string {
     for (let i = 0; i < s.length; i += step) h = (h * 31 + Math.round(s[i] * 1000)) | 0;
     return `${k}:c:${s.length}:${h}`;
   }).join('|');
+}
+
+/** Builder for an empty storey stacked on `top` (for `Store.addLevelOnTop`). */
+export function emptyLevelAbove(count: number) {
+  return (top: Level): Omit<Level, 'id'> => ({
+    name: `Level ${count + 1}`, elevation: Math.round((top.elevation + top.height + 0.3) * 1000) / 1000, height: top.height,
+    walls: [], openings: [], rooms: [], items: [], stairs: [],
+  });
 }
