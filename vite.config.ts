@@ -37,10 +37,10 @@ export default defineConfig({
         // App shell is precached; the 11 MB CAD reader is cached on first use.
         globPatterns: ['**/*.{js,css,html,ico,png,svg,webmanifest}'],
         // The CAD reader and the Anthropic SDK (photo/link import) load on first use.
-        globIgnores: ['**/cad.worker-*.js', '**/sdk-*.js'],
+        globIgnores: ['**/cad.worker-*.js'],
         maximumFileSizeToCacheInBytes: 6 * 1024 * 1024,
         runtimeCaching: [{
-          urlPattern: ({ url }) => /\.wasm$|cad\.worker-.*\.js$|\/sdk-[\w-]+\.js$/.test(url.pathname),
+          urlPattern: ({ url }) => /\.wasm$|cad\.worker-.*\.js$/.test(url.pathname),
           handler: 'CacheFirst',
           options: { cacheName: 'cad-reader', expiration: { maxEntries: 6 } },
         }, {
