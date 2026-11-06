@@ -3,7 +3,8 @@ import type { Item, Level, Opening, Selection, Stair, Vec2, Wall } from '../mode
 import { formatArea, formatLength } from '../model/units';
 import { uid } from '../model/ids';
 import { itemObb } from '../geometry/checks';
-import { dist, obbCorners, pointInObb, pointSegment, toWorld } from '../geometry/math';
+import { dist, normAngle, obbCorners, pointInObb, pointSegment, round3 as round, toWorld } from '../geometry/math';
+import { mix, withAlpha } from './colors';
 import { pointInRegion, regionAt, roomRegions } from '../geometry/rooms';
 import { stairFootprint, stairSections } from '../geometry/stairs';
 import { endExtensions, JOIN_TOL, openingSpans, wallDir, wallLength, wallObb } from '../geometry/walls';
@@ -1081,7 +1082,7 @@ export class PlanView {
 }
 
 /** Where a room's label is drawn: region centroid if enclosed, else its seed. */
-export function roomLabelPos(level: Level, roomId: string): Vec2 {
+function roomLabelPos(level: Level, roomId: string): Vec2 {
   const r = level.rooms.find((x) => x.id === roomId);
   if (!r) return { x: 0, z: 0 };
   const reg = roomRegions(level).get(roomId);
@@ -1089,38 +1090,8 @@ export function roomLabelPos(level: Level, roomId: string): Vec2 {
   return r.seed;
 }
 
-const round = (v: number) => Math.round(v * 1000) / 1000;
-const normAngle = (a: number) => {
-  let r = a % (Math.PI * 2);
-  if (r > Math.PI) r -= Math.PI * 2;
-  if (r < -Math.PI) r += Math.PI * 2;
-  return round(r);
-};
 
 function roundRect(ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h: number, r: number) {
   ctx.beginPath();
   ctx.roundRect(x, y, w, h, Math.max(0, r));
-}
-
-/** Parse #rgb, #rrggbb or rgb()/rgba() (CSS minifiers shorten theme colours). */
-export function hex(c: string): [number, number, number] {
-  const v = c.trim();
-  const short = v.match(/^#?([0-9a-f])([0-9a-f])([0-9a-f])$/i);
-  if (short) return [1, 2, 3].map((i) => parseInt(short[i] + short[i], 16)) as [number, number, number];
-  const long = v.match(/^#?([0-9a-f]{6})$/i);
-  if (long) {
-    const n = parseInt(long[1], 16);
-    return [(n >> 16) & 255, (n >> 8) & 255, n & 255];
-  }
-  const rgb = v.match(/^rgba?\(\s*([\d.]+)[\s,]+([\d.]+)[\s,]+([\d.]+)/i);
-  if (rgb) return [+rgb[1], +rgb[2], +rgb[3]];
-  return [128, 128, 128];
-}
-function withAlpha(c: string, a: number) {
-  const [r, g, b] = hex(c);
-  return `rgba(${r},${g},${b},${a})`;
-}
-function mix(a: string, b: string, t: number) {
-  const A = hex(a), B = hex(b);
-  return `rgb(${A.map((v, i) => Math.round(v + (B[i] - v) * t)).join(',')})`;
 }

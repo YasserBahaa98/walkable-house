@@ -154,7 +154,7 @@ export function floorSwatch(kind: FloorMaterial, size = 48): string {
 }
 
 let plaster: THREE.CanvasTexture | null = null;
-export function plasterTexture(): THREE.CanvasTexture {
+function plasterTexture(): THREE.CanvasTexture {
   plaster ??= canvasTexture((ctx, n) => {
     ctx.fillStyle = '#808080';
     ctx.fillRect(0, 0, n, n);

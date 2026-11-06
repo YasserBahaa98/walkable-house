@@ -1,5 +1,5 @@
 import type { Level, Opening, Wall } from '../model/types';
-import { type Bounds, emptyBounds, growBounds, type Obb, pointSegment, segmentObb } from './math';
+import { type Bounds, emptyBounds, growBounds, type Obb, pointSegment, round3 as round, segmentObb } from './math';
 
 export const JOIN_TOL = 0.03;
 
@@ -13,7 +13,7 @@ export function wallDir(w: Wall): { ux: number; uz: number; nx: number; nz: numb
 }
 
 /** Point at distance `t` metres along the wall from `a`. */
-export function wallPoint(w: Wall, t: number) {
+function wallPoint(w: Wall, t: number) {
   const { ux, uz } = wallDir(w);
   return { x: w.a.x + ux * t, z: w.a.z + uz * t };
 }
@@ -176,7 +176,6 @@ export function curveWall(level: Level, wallId: string, sagitta: number, newId: 
   const arcLen = Math.abs(sweep) * R;
   const n = Math.max(6, Math.min(32, Math.round(arcLen / 0.35)));
   const pts = Array.from({ length: n + 1 }, (_, i) => (i === 0 ? { ...w.a } : i === n ? { ...w.b } : at(i / n, sweep)));
-  const round = (v: number) => Math.round(v * 1000) / 1000;
   const segs: Wall[] = [];
   for (let i = 0; i < n; i++) {
     segs.push({ ...w, id: i === 0 ? w.id : newId(), a: { x: round(pts[i].x), z: round(pts[i].z) }, b: { x: round(pts[i + 1].x), z: round(pts[i + 1].z) } });

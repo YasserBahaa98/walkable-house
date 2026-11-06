@@ -48,15 +48,6 @@ export function download(data: Blob | string, filename: string) {
   if (typeof data !== 'string') setTimeout(() => URL.revokeObjectURL(url), 2000);
 }
 
-export function pickFile(accept: string): Promise<File | null> {
-  return new Promise((resolve) => {
-    const input = h('input', { type: 'file', accept });
-    input.addEventListener('change', () => resolve(input.files?.[0] ?? null), { once: true });
-    input.addEventListener('cancel', () => resolve(null), { once: true });
-    input.click();
-  });
-}
-
 export function pickFiles(accept: string): Promise<File[]> {
   return new Promise((resolve) => {
     const input = h('input', { type: 'file', accept, multiple: true });

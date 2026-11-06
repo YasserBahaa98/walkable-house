@@ -80,7 +80,7 @@ function orient(poly: V3[]): V3[] {
 }
 
 /** Y component of the polygon normal (Newell's method). */
-export function normalY(poly: V3[]): number {
+function normalY(poly: V3[]): number {
   let ny = 0;
   for (let i = 0; i < poly.length; i++) {
     const a = poly[i], b = poly[(i + 1) % poly.length];

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { hex } from '../src/view2d/PlanView';
+import { hex } from '../src/view2d/colors';
 
 describe('theme colour parsing', () => {
   it('accepts the forms browsers and minifiers produce', () => {

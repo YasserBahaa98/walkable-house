@@ -118,9 +118,3 @@ export function stairHeightAt(s: Stair, rise: number, x: number, z: number, pad 
   }
   return null;
 }
-
-/** Total horizontal size of a stair (for the inspector). */
-export function stairSize(s: Stair): { w: number; d: number } {
-  const o = stairObb(s);
-  return { w: o.hx * 2, d: o.hz * 2 };
-}

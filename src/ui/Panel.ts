@@ -7,6 +7,7 @@ import { checkLevel, type Issue } from '../geometry/checks';
 import { roomRegions } from '../geometry/rooms';
 import { stairRise, stepCount } from '../geometry/stairs';
 import { curveWall, splitWall, wallLength } from '../geometry/walls';
+import { clamp, normAngle, round3 as round } from '../geometry/math';
 import { floorSwatch } from '../view3d/materials';
 import type { ModelLibrary } from '../view3d/models';
 import { download, h, icon, iconButton, pickFiles, slug } from './dom';
@@ -287,7 +288,7 @@ export class Panel {
           this.lengthField('Y', () => cur().z, (v) => edit((x) => { x.z = v; }, `it-z-${it.id}`), -1000, 1000)),
         this.numberField('Rotation', '°', () => Math.round(((cur().rot * 180) / Math.PI) * 10) / 10, (v) => edit((x) => { x.rot = (v * Math.PI) / 180; }, `it-r-${it.id}`), -360, 360, 15),
         h('div', { class: 'btn-row' },
-          h('button', { class: 'btn', type: 'button', onclick: () => edit((x) => { x.rot = norm(x.rot + Math.PI / 2); }, uid()) }, icon('rotate', 16), 'Rotate 90°'),
+          h('button', { class: 'btn', type: 'button', onclick: () => edit((x) => { x.rot = normAngle(x.rot + Math.PI / 2); }, uid()) }, icon('rotate', 16), 'Rotate 90°'),
           h('button', { class: 'btn', type: 'button', onclick: () => s.duplicateSelection() }, icon('copy', 16), 'Duplicate')),
       ]),
     ];
@@ -332,8 +333,8 @@ export class Panel {
         (cur().length + (cur().shape ? (cur().length2 ?? cur().length) : 0)) / n < 0.18
           ? h('p', { class: 'warn small' }, icon('warning', 14), ' Very steep: treads are shorter than 18 cm. Make the run longer or use an L/U shape.') : null,
         h('div', { class: 'btn-row' },
-          h('button', { class: 'btn', type: 'button', onclick: () => edit((x) => { x.rot = norm(x.rot + Math.PI); }, uid()) }, icon('flip', 16), 'Reverse direction'),
-          h('button', { class: 'btn', type: 'button', onclick: () => edit((x) => { x.rot = norm(x.rot + Math.PI / 2); }, uid()) }, icon('rotate', 16), 'Rotate 90°'),
+          h('button', { class: 'btn', type: 'button', onclick: () => edit((x) => { x.rot = normAngle(x.rot + Math.PI); }, uid()) }, icon('flip', 16), 'Reverse direction'),
+          h('button', { class: 'btn', type: 'button', onclick: () => edit((x) => { x.rot = normAngle(x.rot + Math.PI / 2); }, uid()) }, icon('rotate', 16), 'Rotate 90°'),
           h('button', { class: 'btn', type: 'button', onclick: () => s.duplicateSelection() }, icon('copy', 16), 'Duplicate')),
       ].filter(Boolean) as Node[]),
     ];
@@ -588,8 +589,8 @@ export class Panel {
       const v = parseLength(input.value, units);
       if (v === null || !Number.isFinite(v)) { input.classList.add('invalid'); return; }
       input.classList.remove('invalid');
-      set(clampN(v, min, max));
-      input.value = String(toUnit(clampN(v, min, max), units));
+      set(clamp(v, min, max));
+      input.value = String(toUnit(clamp(v, min, max), units));
     };
     input.addEventListener('change', commit);
     input.addEventListener('keydown', (e) => {
@@ -597,7 +598,7 @@ export class Panel {
       if (e.key === 'ArrowUp' || e.key === 'ArrowDown') {
         e.preventDefault();
         const stepM = e.shiftKey ? 0.1 : units === 'ft' ? 0.0254 : 0.01;
-        const v = clampN(get() + (e.key === 'ArrowUp' ? stepM : -stepM), min, max);
+        const v = clamp(get() + (e.key === 'ArrowUp' ? stepM : -stepM), min, max);
         set(round(v));
         input.value = String(toUnit(v, units));
       }
@@ -613,7 +614,7 @@ export class Panel {
   private numberField(label: string, unit: string, get: () => number, set: (v: number) => void, min: number, max: number, step: number): HTMLElement {
     const input = h('input', { class: 'input', type: 'number', step: String(step), min: String(min), max: String(max), 'aria-label': label });
     const show = () => { if (document.activeElement !== input) input.value = String(get()); };
-    input.addEventListener('input', () => { const v = parseFloat(input.value); if (Number.isFinite(v)) set(clampN(v, min, max)); });
+    input.addEventListener('input', () => { const v = parseFloat(input.value); if (Number.isFinite(v)) set(clamp(v, min, max)); });
     show();
     this.refreshers.push(show);
     return h('label', { class: 'field' }, h('span', { class: 'field-label' }, label), h('span', { class: 'input-unit' }, input, h('span', { class: 'unit' }, unit)));
@@ -686,11 +687,3 @@ function segmented(options: { id: string; label: string }[], value: string, onCh
 }
 
 const cap = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
-const round = (v: number) => Math.round(v * 1000) / 1000;
-const clampN = (v: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, v));
-const norm = (a: number) => {
-  let r = a % (Math.PI * 2);
-  if (r > Math.PI) r -= Math.PI * 2;
-  if (r < -Math.PI) r += Math.PI * 2;
-  return round(r);
-};

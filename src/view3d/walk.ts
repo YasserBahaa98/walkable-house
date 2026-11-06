@@ -4,7 +4,7 @@ import { type Obb, pushCircle } from '../geometry/math';
 import { stairHeightAt, stairRise } from '../geometry/stairs';
 import { solidObbs } from '../geometry/walls';
 
-export const PLAYER_RADIUS = 0.22;
+const PLAYER_RADIUS = 0.22;
 
 interface WalkLevel { level: Level; elevation: number; obbs: Obb[]; stairs: { s: Level['stairs'][number]; rise: number }[] }
 export interface WalkWorld { levels: WalkLevel[] }
@@ -30,14 +30,14 @@ export function buildWalkWorld(levels: Level[]): WalkWorld {
 export interface Walker { x: number; z: number; y: number }
 
 /** The level whose floor the walker is standing on (by height). */
-export function currentLevel(world: WalkWorld, y: number): WalkLevel | undefined {
+function currentLevel(world: WalkWorld, y: number): WalkLevel | undefined {
   let best: WalkLevel | undefined;
   for (const l of world.levels) if (l.elevation <= y + 0.35) best = l;
   return best ?? world.levels[0];
 }
 
 /** Floor height under (x, z) for a walker currently at height y. */
-export function groundHeight(world: WalkWorld, x: number, z: number, y: number): number {
+function groundHeight(world: WalkWorld, x: number, z: number, y: number): number {
   const lvl = currentLevel(world, y);
   let ground = lvl?.elevation ?? 0;
   let bestDiff = Infinity;

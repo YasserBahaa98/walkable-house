@@ -1,10 +1,11 @@
 import type { Store } from '../model/store';
-import type { Item, Level, Project, Tool, Vec2 } from '../model/types';
+import type { Item, Project, Tool, Vec2 } from '../model/types';
 import { emptyProject, sampleProject } from '../model/sample';
 import { parseProject } from '../model/validate';
 import { formatLength, parseLength } from '../model/units';
 import { uid } from '../model/ids';
 import { dist } from '../geometry/math';
+import { scaleLevel } from '../geometry/transform';
 import { PlanView } from '../view2d/PlanView';
 import { View3D } from '../view3d/View3D';
 import { ModelLibrary } from '../view3d/models';
@@ -604,25 +605,5 @@ export class App {
     });
     if (r === 'empty') { this.store.load(emptyProject()); this.store.setTool('wall'); this.afterLoad(); }
     if (r === 'import') await this.openFile();
-  }
-}
-
-/** Scale a level's geometry (and reference drawing) uniformly around point `o`. */
-export function scaleLevel(p: Project, l: Level, o: Vec2, k: number) {
-  const sp = (q: Vec2): Vec2 => ({ x: Math.round((o.x + (q.x - o.x) * k) * 1000) / 1000, z: Math.round((o.z + (q.z - o.z) * k) * 1000) / 1000 });
-  for (const w of l.walls) { w.a = sp(w.a); w.b = sp(w.b); }
-  for (const op of l.openings) { op.offset *= k; op.width *= k; }
-  for (const r of l.rooms) r.seed = sp(r.seed);
-  for (const it of l.items) { const q = sp(it); it.x = q.x; it.z = q.z; }
-  for (const s of l.stairs) { const q = sp(s); s.x = q.x; s.z = q.z; s.length *= k; s.width *= k; }
-  const ul = p.underlays[l.id];
-  if (ul?.kind === 'cad') {
-    for (let i = 0; i < ul.segments.length; i += 2) {
-      const q = sp({ x: ul.segments[i], z: ul.segments[i + 1] });
-      ul.segments[i] = q.x; ul.segments[i + 1] = q.z;
-    }
-  } else if (ul?.kind === 'image') {
-    const q = sp({ x: ul.x, z: ul.z });
-    ul.x = q.x; ul.z = q.z; ul.scale *= k;
   }
 }

@@ -310,7 +310,7 @@ function slabBounds(level: Level): SB | null {
 }
 
 /** Slab rectangles covering the bounds minus stairwell holes (merged grid cells). */
-export function slabRects(b: SB, holes: Obb[]): Rect[] {
+function slabRects(b: SB, holes: Obb[]): Rect[] {
   if (!holes.length) return [{ x: b.minX, z: b.minZ, w: b.maxX - b.minX, d: b.maxZ - b.minZ }];
   const cell = Math.max(0.05, Math.max(b.maxX - b.minX, b.maxZ - b.minZ) / 800);
   const nx = Math.max(1, Math.ceil((b.maxX - b.minX) / cell)), nz = Math.max(1, Math.ceil((b.maxZ - b.minZ) / cell));
