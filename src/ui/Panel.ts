@@ -14,6 +14,7 @@ import { FINISH_LABELS, FINISHES, PART_LABELS, resolveStyle, STYLE_FIELDS, style
 import type { ModelLibrary } from '../view3d/models';
 import { download, h, icon, iconButton, pickFiles, slug } from './dom';
 import { confirmDialog, promptDialog, toast } from './feedback';
+import { productDialog } from './productDialog';
 import { cap, FieldKit, header, section, segmented, stat } from './fields';
 
 type Tab = 'inspect' | 'library' | 'report' | 'view';
@@ -484,7 +485,13 @@ export class Panel {
   private libraryTab(): Node[] {
     const s = this.store;
     const cats = [...new Set(CATALOG.map((c) => c.category))];
-    const nodes: Node[] = [h('p', { class: 'hint' }, icon('info', 14), ` Click to add to “${s.level.name}”. Items appear in the middle of the plan view.`)];
+    const nodes: Node[] = [
+      section('From a shop', [
+        h('p', { class: 'muted small' }, 'Paste a product link or a picture of a piece of furniture and Claude builds a matching one.'),
+        h('div', { class: 'btn-row' }, h('button', { class: 'btn btn-primary', type: 'button', onclick: () => void this.addFromProduct() }, icon('sparkle', 16), 'Add from photo or link…')),
+      ]),
+      h('p', { class: 'hint' }, icon('info', 14), ` Click to add to “${s.level.name}”. Items appear in the middle of the plan view.`),
+    ];
     for (const cat of cats) {
       nodes.push(section(cat, [h('div', { class: 'catalog' }, ...CATALOG.filter((c) => c.category === cat).map((c) =>
         h('button', {
@@ -589,6 +596,15 @@ export class Panel {
 
   // ---------------------------------------------------------- operations
   private cur<T>(): T | undefined { return this.store.find() as T | undefined; }
+
+  private async addFromProduct() {
+    const spec = await productDialog();
+    if (!spec) return;
+    const { sizeSource, notes: _notes, ...item } = spec;
+    this.addItem(item);
+    this.setTab('inspect');
+    if (sizeSource === 'estimated') toast('The size was estimated. Check the measurements in the inspector.', 'info', 6000);
+  }
 
   private addItem(spec: Omit<Item, 'id' | 'x' | 'z' | 'rot'>) {
     const c = this.host.viewCenter();
