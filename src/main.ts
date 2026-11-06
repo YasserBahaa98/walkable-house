@@ -14,14 +14,22 @@ async function boot() {
   let view: Partial<ViewSettings> | undefined;
   let storageOk = true;
   let firstRun = false;
+  let unreadable = false;
   try {
     const saved = await kvGet<unknown>('project');
-    if (saved) project = parseProject(saved);
-    else firstRun = true;
     view = (await kvGet<Partial<ViewSettings>>('view')) ?? undefined;
+    if (!saved) firstRun = true;
+    else {
+      try {
+        project = parseProject(saved);
+      } catch (err) {
+        unreadable = true;
+        console.warn('Saved project is unreadable', err);
+      }
+    }
   } catch (err) {
     storageOk = false;
-    console.warn('Could not load saved project', err);
+    console.warn('Browser storage unavailable', err);
   }
 
   const store = new Store(project ?? sampleProject(), view);
@@ -37,6 +45,7 @@ async function boot() {
   document.getElementById('boot')?.remove();
 
   if (!storageOk) toast('Browser storage is unavailable (private mode?). Export your project to keep your work.', 'error', 8000);
+  if (unreadable) toast('Your saved project could not be read, so the demo house was loaded instead.', 'error', 8000);
   if (firstRun && storageOk) void app.welcome();
 
   window.addEventListener('error', (e) => toast(`Something went wrong: ${e.message}`, 'error'));
