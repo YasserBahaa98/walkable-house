@@ -66,6 +66,9 @@ function textWidth(ctx: CanvasRenderingContext2D, text: string): number {
   return w;
 }
 
+/** A finger must travel this far (px) before a touch counts as a drag rather than a tap. */
+const TOUCH_SLOP = 10;
+
 const FLOOR_TINT: Record<string, string> = {
   oak: '#e9d8bf', walnut: '#d5bfa6', tile: '#e2e4e4', marble: '#ecebe7', carpet: '#e0dbd3', concrete: '#d9d8d4',
 };
@@ -82,6 +85,14 @@ export class PlanView {
   private drag: Drag | null = null;
   private pointers = new Map<number, { x: number; y: number }>();
   private pinch: { d: number; scale: number; cx: number; cy: number; ox: number; oy: number } | null = null;
+  /** A single finger that is down but not yet a tap or a drag. Nothing happens until it is resolved. */
+  private pendingTouch: { id: number; x: number; y: number } | null = null;
+  /** Set once a gesture used two fingers; leftover fingers are ignored until all lift. */
+  private multiTouch = false;
+  /** Whether the current drag has changed the project (so a late pinch can revert it). */
+  private dragEdited = false;
+  /** Hit-test tolerance multiplier: fingers are less precise than a mouse. */
+  private hitScale = 1;
   private cursor: Vec2 = { x: 0, z: 0 };
   private cursorScreen = { x: -1, y: -1 };
   private snapped: Vec2 | null = null;
@@ -246,22 +257,54 @@ export class PlanView {
     const { x, y } = this.local(e);
     this.pointers.set(e.pointerId, { x, y });
     this.canvas.setPointerCapture(e.pointerId);
-    if (this.pointers.size === 2) {
+    if (this.pointers.size >= 2) {
+      this.cancelSingle();
+      this.multiTouch = true;
       const [p, q] = [...this.pointers.values()];
-      this.drag = null;
-      this.draft = this.draft.slice(0, Math.max(0, this.draft.length));
       this.pinch = { d: Math.hypot(p.x - q.x, p.y - q.y), scale: this.scale, cx: (p.x + q.x) / 2, cy: (p.y + q.y) / 2, ox: this.ox, oy: this.oy };
+      this.invalidate();
       return;
     }
-    if (e.button === 1 || (e.button === 0 && this.spaceDown)) {
+    if (e.pointerType === 'touch') {
+      // Wait to see whether this becomes a tap, a drag or the start of a pinch.
+      this.pendingTouch = { id: e.pointerId, x, y };
+      return;
+    }
+    this.hitScale = 1;
+    this.begin(x, y, e.button, false);
+  }
+
+  /** Undo whatever a single pointer started, because a second finger turned it into a pinch. */
+  private cancelSingle() {
+    this.pendingTouch = null;
+    if (this.drag && this.dragEdited) { this.store.endMerge(); this.store.undo(); }
+    this.drag = null;
+    this.dragEdited = false;
+    this.measureLine = null;
+    this.hover = null;
+  }
+
+  /**
+   * Start a press at screen point (x, y). `touchDrag` means a finger has already
+   * moved past the slop: it may only move what is already selected (or use a
+   * handle); anything else pans, so a stray swipe never edits the plan.
+   */
+  private begin(x: number, y: number, button: number, touchDrag: boolean) {
+    this.dragEdited = false;
+    if (button === 1 || (button === 0 && this.spaceDown)) {
       this.drag = { kind: 'pan', sx: x, sy: y, ox: this.ox, oy: this.oy };
       return;
     }
-    if (e.button !== 0) return;
+    if (button !== 0) return;
     const w = this.toWorld(x, y);
     const tool = this.store.tool;
     const level = this.store.level;
     const key = `drag:${uid()}`;
+
+    if (touchDrag && tool !== 'select' && tool !== 'measure') {
+      this.drag = { kind: 'pan', sx: x, sy: y, ox: this.ox, oy: this.oy };
+      return;
+    }
 
     if (tool === 'select') {
       const sel = this.store.selection;
@@ -275,7 +318,7 @@ export class PlanView {
         if (wall) {
           for (const end of ['a', 'b'] as const) {
             const [sx, sy] = this.toScreen(wall[end]);
-            if (Math.hypot(sx - x, sy - y) < 9) {
+            if (Math.hypot(sx - x, sy - y) < 9 * this.hitScale) {
               this.drag = { kind: 'endpoint', id: wall.id, end, linked: this.linkedEnds(level, wall[end], wall.id), key };
               return;
             }
@@ -283,6 +326,10 @@ export class PlanView {
         }
       }
       const hit = this.hitTest(w, level);
+      if (touchDrag && (!hit || !sel || hit.kind !== sel.kind || hit.id !== sel.id)) {
+        this.drag = { kind: 'pan', sx: x, sy: y, ox: this.ox, oy: this.oy };
+        return;
+      }
       this.store.select(hit);
       if (!hit) { this.drag = { kind: 'pan', sx: x, sy: y, ox: this.ox, oy: this.oy }; return; }
       if (hit.kind === 'item') {
@@ -351,6 +398,16 @@ export class PlanView {
       this.invalidate();
       return;
     }
+    if (e.pointerType === 'touch') {
+      if (this.multiTouch) return;
+      const pt = this.pendingTouch;
+      if (pt && pt.id === e.pointerId) {
+        if (Math.hypot(x - pt.x, y - pt.y) < TOUCH_SLOP) return;
+        this.pendingTouch = null;
+        this.hitScale = 2;
+        this.begin(pt.x, pt.y, 0, true);
+      }
+    }
     this.cursorScreen = { x, y };
     const w = this.toWorld(x, y);
     this.cursor = w;
@@ -359,6 +416,7 @@ export class PlanView {
     const d = this.drag;
     if (d) {
       const snap = this.store.view.snap;
+      if (d.kind !== 'pan' && d.kind !== 'measure') this.dragEdited = true;
       switch (d.kind) {
         case 'pan':
           this.ox = d.ox + (x - d.sx); this.oy = d.oy + (y - d.sy);
@@ -455,9 +513,17 @@ export class PlanView {
 
   private onUp(e: PointerEvent) {
     this.pointers.delete(e.pointerId);
+    const pt = this.pendingTouch;
+    if (pt && pt.id === e.pointerId) {
+      // A tap: select or place exactly as a mouse click would.
+      this.pendingTouch = null;
+      if (!this.multiTouch && e.type === 'pointerup') { this.hitScale = 2; this.begin(pt.x, pt.y, 0, false); }
+    }
     if (this.pointers.size < 2) this.pinch = null;
+    if (this.pointers.size === 0) this.multiTouch = false;
     if (this.drag && this.drag.kind !== 'pan' && this.drag.kind !== 'measure') this.store.endMerge();
     this.drag = null;
+    this.dragEdited = false;
     this.invalidate();
   }
 
@@ -481,7 +547,7 @@ export class PlanView {
 
   // ------------------------------------------------------------ hit tests
   private hitTest(w: Vec2, level: Level): Selection | null {
-    const tol = 5 / this.scale;
+    const tol = (5 * this.hitScale) / this.scale;
     for (let i = level.items.length - 1; i >= 0; i--) {
       const it = level.items[i];
       if (pointInObb(itemObb(it), w.x, w.z, tol)) return { kind: 'item', id: it.id };
@@ -527,7 +593,7 @@ export class PlanView {
 
   private nearRotateHandle(it: Item, sx: number, sy: number) {
     const [hx, hy] = this.toScreen(this.rotateHandle(it));
-    return Math.hypot(hx - sx, hy - sy) < 10;
+    return Math.hypot(hx - sx, hy - sy) < 10 * this.hitScale;
   }
 
   private linkedEnds(level: Level, p: Vec2, exclude: string) {

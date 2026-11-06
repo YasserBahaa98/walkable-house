@@ -98,6 +98,17 @@ you import a DWG.
 | Save a project file | **Export → Project file** or `Ctrl+S` |
 | All shortcuts | `?` |
 
+On a phone or tablet:
+
+| Action | How |
+| --- | --- |
+| Pan / zoom the plan | drag with one finger / pinch. Neither selects nor moves anything |
+| Select | tap |
+| Move something | tap it to select it, then drag it (or its handles) |
+| Draw walls, place doors and windows | tap; dragging pans instead |
+| Orbit / zoom the 3D view | drag / pinch |
+| Walk | drag to look around, use the on-screen joystick to move |
+
 Tips for CAD files:
 - If walls are missing, open the import dialog's **Wall layers** list and tick the layers that hold wall outlines.
 - If the house is the wrong size, change **Drawing units**, or use **Calibrate scale** later (Inspect tab, with nothing selected).

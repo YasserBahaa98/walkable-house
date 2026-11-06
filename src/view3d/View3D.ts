@@ -416,9 +416,13 @@ export class View3D {
   // ---------------------------------------------------------------- input
   private bindInput() {
     const el = this.renderer.domElement;
-    let down: { x: number; y: number; t: number } | null = null;
+    let down: { id: number; x: number; y: number; t: number } | null = null;
+    // Fingers currently on the canvas. A gesture that ever used two (pinch,
+    // two-finger pan) is never treated as a tap, so it cannot select anything.
+    const active = new Set<number>();
     const onDown = (e: PointerEvent) => {
-      down = { x: e.clientX, y: e.clientY, t: performance.now() };
+      active.add(e.pointerId);
+      down = active.size === 1 ? { id: e.pointerId, x: e.clientX, y: e.clientY, t: performance.now() } : null;
       if (this.store.view.mode === 'walk' && e.pointerType === 'touch') {
         this.touchLook = { id: e.pointerId, x: e.clientX, y: e.clientY };
       }
@@ -436,12 +440,13 @@ export class View3D {
       }
     };
     const onUp = (e: PointerEvent) => {
+      active.delete(e.pointerId);
       if (this.touchLook?.id === e.pointerId) this.touchLook = null;
-      if (!down) return;
+      if (!down || down.id !== e.pointerId) return;
       const moved = Math.hypot(e.clientX - down.x, e.clientY - down.y);
       const quick = performance.now() - down.t < 400;
       down = null;
-      if (moved > 5 || !quick || e.button !== 0) return;
+      if (moved > (e.pointerType === 'touch' ? 10 : 5) || !quick || e.button !== 0 || e.type !== 'pointerup') return;
       if (this.store.view.mode === 'walk') { this.lockPointer(); return; }
       const hit = this.pick(e);
       if (hit?.pick) {
@@ -471,6 +476,7 @@ export class View3D {
     el.addEventListener('pointerdown', onDown);
     el.addEventListener('pointermove', onMove);
     el.addEventListener('pointerup', onUp);
+    el.addEventListener('pointercancel', onUp);
     el.addEventListener('dblclick', onDbl);
     window.addEventListener('keydown', kd);
     window.addEventListener('keyup', ku);
@@ -479,6 +485,7 @@ export class View3D {
       el.removeEventListener('pointerdown', onDown);
       el.removeEventListener('pointermove', onMove);
       el.removeEventListener('pointerup', onUp);
+      el.removeEventListener('pointercancel', onUp);
       el.removeEventListener('dblclick', onDbl);
       window.removeEventListener('keydown', kd);
       window.removeEventListener('keyup', ku);
