@@ -12,12 +12,14 @@ describe('scaleLevel (calibration)', () => {
     const item = l.items[0];
     const [w0, d0, x0] = [item.w, item.d, item.x];
     const offset0 = door.offset;
+    const b0 = { ...wall.b };
+    const len0 = l.stairs[0].length;
     scaleLevel(p, l, { x: 0, z: 0 }, 2);
-    expect(wall.b).toEqual({ x: 18, z: 0 });
+    expect(wall.b).toEqual({ x: b0.x * 2, z: b0.z * 2 });
     expect(door.offset).toBeCloseTo(offset0 * 2);
     expect(item.x).toBeCloseTo(x0 * 2);
     expect([item.w, item.d]).toEqual([w0, d0]);
-    expect(l.stairs[0].length).toBeCloseTo(5.6);
+    expect(l.stairs[0].length).toBeCloseTo(len0 * 2);
     const ul = p.underlays[l.id];
     expect(ul.kind === 'cad' && ul.segments).toEqual([0, 0, 18, 0]);
   });
